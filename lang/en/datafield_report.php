@@ -26,23 +26,10 @@
  */
 
 /** required strings */
-$string['pluginname'] = 'Report field';
+$string['pluginname'] = 'Report';
 
 /** more string */
 $string['accessnone'] = 'Hidden from non-managers';
 $string['accessview'] = 'Viewable by non-managers';
 $string['accessedit'] = 'Editable by non-managers';
 $string['disabledif'] = 'Conditions for disabling this field';
-$string['fixlangpack'] = '**The Report field is not yet properly installed**
-
-Please append language strings for the Report field to Database language file:
-
-* EDIT: {$a->langfile}
-* ADD: $string[\'report\'] = \'Report\';
-* ADD: $string[\'namereport\'] = \'Report field\';
-
-Then purge the Moodle caches:
-
-* Reportistration -> Site reportistration -> Development -> Purge all caches
-
-See {$a->readfile} for more details.';

@@ -26,38 +26,7 @@
  ?>
 <table width="100%" cellpadding="5" class="datafield_report"><?php
 
-    $name  = 'name';
-    $value = $this->field->$name;
-    $label = get_string('field'.$name, 'data');
-    $text  = $this->format_edit_textfield($name, $value, 'field'.$name);
-    echo $this->format_table_row($name, $label, $text);
-
-    $name  = 'description';
-    $value = $this->field->$name;
-    $label = get_string('field'.$name, 'data');
-    $text  = $this->format_edit_textfield($name, $value, 'field'.$name);
-    echo $this->format_table_row($name, $label, $text);
-
-    $name  = $this->subparam; // param10
-    $label = get_string('type', 'data');
-    $options = $this->get_datafield_types();
-    $default = '';
-    $text  = $this->format_edit_selectfield($name, $options, $default);
-    echo $this->format_table_row($name, $label, $text);
-
-    $name = $this->accessparam; // param9
-    $label = get_string('access', 'access');
-    $options = $this->get_access_types();
-    $default = data_field_report::ACCESS_VIEW;
-    $text  = $this->format_edit_selectfield($name, $options, $default);
-    echo $this->format_table_row($name, $label, $text);
-
-    $name = $this->disabledifparam; // param8
-    $value = $this->field->$name;
-    $label = get_string('disabledif', 'datafield_report');
-    $text = $this->format_edit_textarea($name, $value, 'disabledif');
-    echo $this->format_table_row($name, $label, $text);
-
-    $this->display_edit_subfield();
+    data_field_admin::format_core_field($this->field, 'name');
+    data_field_admin::format_core_field($this->field, 'description');
 
 ?></table>
