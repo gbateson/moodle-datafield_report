@@ -36,4 +36,18 @@ require_once($CFG->dirroot.'/mod/data/field/admin/field.class.php');
 
 class data_field_report extends data_field_base {
     var $type = 'report';
+
+    /**
+     * text export is not supported for "report" fields
+     */
+    function text_export_supported() {
+        return false;
+    }
+
+    /**
+     * text export is not supported for "report" fields
+     */
+    function export_text_value($record) {
+        return '';
+    }
 }
