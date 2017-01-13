@@ -50,4 +50,13 @@ class data_field_report extends data_field_base {
     function export_text_value($record) {
         return '';
     }
+
+    /**
+     * delete content associated with a report field
+     * when the field is deleted from the "Fields" page
+     */
+    function delete_content($recordid=0) {
+        data_field_admin::delete_content_files($this);
+        return parent::delete_content($recordid);
+    }
 }
