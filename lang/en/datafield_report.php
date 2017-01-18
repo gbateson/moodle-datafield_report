@@ -27,9 +27,6 @@
 
 /** required strings */
 $string['pluginname'] = 'Report';
+$string['fieldtypelabel'] = 'Report field';
 
-/** more string */
-$string['accessnone'] = 'Hidden from non-managers';
-$string['accessview'] = 'Viewable by non-managers';
-$string['accessedit'] = 'Editable by non-managers';
-$string['disabledif'] = 'Conditions for disabling this field';
+/** more strings */
