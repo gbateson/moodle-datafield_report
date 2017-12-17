@@ -38,6 +38,13 @@ class data_field_report extends data_field_base {
     var $type = 'report';
 
     /**
+     * generate HTML to display icon for this field type on the "Fields" page
+     */
+    function image() {
+        return data_field_admin::field_icon($this);
+    }
+
+    /**
      * text export is not supported for "report" fields
      */
     function text_export_supported() {
