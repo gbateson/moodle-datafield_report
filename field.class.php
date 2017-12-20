@@ -37,6 +37,8 @@ require_once($CFG->dirroot.'/mod/data/field/admin/field.class.php');
 class data_field_report extends data_field_base {
     var $type = 'report';
 
+    // TODO: allow SUM, AVERAGE, COUNT, DISTINCT, DISTINCT_COUNT
+
     /**
      * generate HTML to display icon for this field type on the "Fields" page
      */
@@ -65,5 +67,15 @@ class data_field_report extends data_field_base {
     function delete_content($recordid=0) {
         data_field_admin::delete_content_files($this);
         return parent::delete_content($recordid);
+    }
+
+    /**
+     * Return the plugin configs for external functions.
+     *
+     * @return array the list of config parameters
+     * @since Moodle 3.3
+     */
+    public function get_config_for_external() {
+    	return data_field_admin::get_field_params($this->field);
     }
 }
