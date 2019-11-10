@@ -2,35 +2,35 @@
 Change log for datafield_report
 ========================================
 
-2017-12-20 (08)
- -  fix URL of secondary zip download site 
+2019-10-12 (10)
+ - standardize layout and spelling in CHANGES.txt
 
 2017-12-20 (08)
- -  add new standard method, 'get_config_for_external()' 
+ - fix URL of secondary zip download site
+
+2017-12-20 (08)
+ - add new standard method, 'get_config_for_external()'
 
 2017-12-18 (07)
- -  add pix/icon for this plugin 
+ - add pix/icon for this plugin
 
 2017-12-17 (06)
- -  add pix/icon.gif and new method to return correct icon for this plugin 
+ - add pix/icon.gif and new method to return correct icon for this plugin
 
 2017-01-18 (05)
- -  add strings required for Moodle >= 3.2 
+ - add strings required for Moodle >= 3.2
 
 2017-01-13 (04)
- -  datafield_action ensure files are deleted from filearea when fields of this type are deleted from Fields page 
+ - datafield_action ensure files are deleted from filearea when fields of this type are deleted from Fields page
 
 2017-01-11 (03)
- -  add lib.php with function to rewrite file URLs 
+ - add lib.php with function to rewrite file URLs
 
 2016-11-02 (02)
- -  disable text_export for action fields 
+ - disable text_export for action fields
 
 2016-04-24 (01)
- -  use datafield_admin static methods to format fields in mod.html 
-
-2016-04-24 (01)
- -  use datafield_admin static methods to format fields in mod.html 
+ - use datafield_admin static methods to format fields in mod.html
 
 2016-04-01 (00)
- -  populate SVN repository 
+ - populate SVN repository
