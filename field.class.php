@@ -37,7 +37,47 @@ require_once($CFG->dirroot.'/mod/data/field/admin/field.class.php');
 class data_field_report extends data_field_base {
     var $type = 'report';
 
-    // TODO: allow SUM, AVERAGE, COUNT, DISTINCT, DISTINCT_COUNT
+    // param1: select field: SQL_FUNCTION(database.selectfield)
+    // param2: condition: (database.wherefield OPERATOR field_or_value)
+    // param3: sort field: database.sortfield
+
+    // SQL_FUNCTION is one of the following aggregate functions:
+    //      MIN, MAX, SUM, AVERAGE, COUNT, DISTINCT, JOIN, VALUE
+
+    // "database." is optional.
+    //      If numeric, it is assumed to be the cmid of another data activity on this site.
+    //      Otherwise, it is assumed to be a table in the Moodle database,
+    //      in which case, only certain table+field combinations are allowed.
+    //      We must ensure that user can only view data that would usually be accessibile to that user.
+
+    // OPERATOR can be one of the following:
+    //      =, >, >=, <, <=, <>, !=, IN, NOT IN, LIKE, NOT LIKE, REGEXP
+
+    // field_or_value can be another field in the current database
+    //      it can of course possible another report field
+
+    // certain aliases are available:
+    //      MY_USERID, MY_COURSEID, MY_DATAID, MY_RECORDID
+
+    // MY_RECORD_IDS(): SELECT DISTINCT id FROM {data_records} WHERE userid = MY_USERID AND dataid = MY_DATAID;
+    // MY_RECORD_IDS(somedataid): SELECT DISTINCT id FROM {data_records} WHERE userid = MY_USERID AND dataid = somedataid;
+
+    // MY_GROUP_IDS(): SELECT DISTINCT groupid FROM {groups_members} WHERE userid = MY_USERID AND courseid = MY_COURSEID;
+    // MY_GROUP_IDS("group name"): SELECT id FROM {groups} WHERE name = "My group name" AND courseid = MY_COURSEID;
+
+    // MY_GROUP_USERIDS(): SELECT userid FROM mdl_groups_members WHERE groupid IN MY_GROUP_IDS()
+    // MY_GROUP_USERIDS("group name"): SELECT userid FROM mdl_groups_members WHERE groupid IN MY_GROUP_IDS("group name")
+
+
+    /**
+     * displays the settings for this field on the "Fields" page
+     *
+     * @return void, but output is echo'd to browser
+     */
+    function display_edit_field() {
+        data_field_admin::check_lang_strings($this);
+        parent::display_edit_field();
+    }
 
     /**
      * generate HTML to display icon for this field type on the "Fields" page

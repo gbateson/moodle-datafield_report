@@ -25,7 +25,6 @@
  * @since     Moodle 2.0
  */
 
-.path-mod-data-field form#editfield table.datafield_report tr.param8 td.c0 {
-    padding-top: 10px;
+.path-mod-data-field form#editfield table.datafield_report tr {
     vertical-align: top;
 }
