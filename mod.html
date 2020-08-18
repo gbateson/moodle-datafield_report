@@ -35,7 +35,7 @@ $value = $this->field->$param;
 $name = 'selectfield';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
-$text = data_field_admin::format_text_field($param, $value, $name, 40);
+$text = data_field_admin::format_textarea_field($param, $value, $name, 2);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
 $param = 'param2';

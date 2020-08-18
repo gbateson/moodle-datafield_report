@@ -27,6 +27,9 @@
 
 /** required strings */
 $string['pluginname'] = 'Report';
+$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
+$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
+$string['errorfunctionusersdescription'] = 'a format string, and a list of user ids.';
 $string['fieldtypelabel'] = 'Report field';
 $string['selectfield_help'] = 'Specify the name of the field that you want to be selected and displayed.
 

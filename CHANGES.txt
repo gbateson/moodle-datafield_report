@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-08-18 (13)
+ - implement functionality to parse param1 as a function and add methods to implement a provisional set of functions: MENU, USERS, MY_GROUP_USERIDS, FIELDVALUE
+
 2020-08-16 (12)
  - use <DL> + bootstrap classes in mod.html templates
 
