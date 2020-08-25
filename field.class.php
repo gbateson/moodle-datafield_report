@@ -116,16 +116,29 @@ class data_field_report extends data_field_base {
             case 'addtemplate': $param = 'param3'; break;
             default: return ''; // shouldn't happen !!
         }
-        if ($param) {
-            if ($arguments = $this->parse_arguments($recordid, $this->field->$param, 0)) {
-                list($arguments, $offset) = $arguments;
-                foreach ($arguments as $a => $argument) {
-                    $arguments[$a] = $this->compute($recordid, $argument);
-                }
-                return implode('', $arguments);
-            } else {
-                return $this->field->$param;   
+        if (substr($this->field->$param, 0, 8) == 'SAME_AS_') {
+            switch (substr($this->field->$param, 8)) {
+                case 'VIEW_LIST': $param = 'param1'; break;
+                case 'VIEW_SINGLE': $param = 'param2'; break;
+                case 'ADV_SEARCH': $param = 'param3'; break;
+                case 'ADD_ENTRY': $param = 'param3'; break;
             }
+        } else if (empty($this->field->$param)) {
+            switch ($param) {
+                case 'param1': $param = 'param2'; break;
+                case 'param2': $param = 'param1'; break;
+                case 'param3': $param = 'param4'; break;
+                case 'param4': $param = 'param3'; break;
+            }
+        }
+        if ($arguments = $this->parse_arguments($recordid, $this->field->$param, 0)) {
+            list($arguments, $offset) = $arguments;
+            foreach ($arguments as $a => $argument) {
+                $arguments[$a] = $this->compute($recordid, $argument);
+            }
+            return implode('', $arguments);
+        } else {
+            return $this->field->$param;   
         }
     }
 

@@ -3,6 +3,9 @@ Change log for datafield_report
 ========================================
 
 2020-08-25 (15)
+ - add specification for 'search' template
+
+2020-08-25 (15)
  - add display of search form field
 
 2020-08-25 (14)
