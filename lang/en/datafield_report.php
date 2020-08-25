@@ -27,49 +27,15 @@
 
 /** required strings */
 $string['pluginname'] = 'Report';
-$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
-$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
-$string['errorfunctionusersdescription'] = 'a format string, and a list of user ids.';
-$string['fieldtypelabel'] = 'Report field';
-$string['selectfield_help'] = 'Specify the name of the field that you want to be selected and displayed.
-
-By default, the report will assume that the field is in the current database.
-
-To specify a field in another database in this course, put the course module id in front of the field name, thus:
-
-* 123.reportcontent
-
-You can also specify one of the following aggregate functions, for combining the selected values into a single value.
-
-* MIN
-* MAX
-* SUM
-* COUNT
-* AVERAGE
-* JOIN';
-$string['selectfield'] = 'Select';
-$string['sortfield_help'] = 'The field on which you wish to sort results. This field is optional, and is usually not necessary.';
-$string['sortfield'] = 'Sort by';
-$string['wherecondition_help'] = 'The condition used to select records from the target database. 
-
-The condition is experssed as ...
-
-* *field OPERATOR field_or_value*
-
-... where OPERATOR can be one of the following: ...
-
-* =
-* >
-* >
-* <
-* <=
-* <>
-* !=
-* IN
-* NOT IN
-* LIKE
-* NOT LIKE
-* REGEXP';
-$string['wherecondition'] = 'Where';
 
 /** more strings */
+$string['addedit_help'] = 'The value of this field on the "Add entry" template, which is the page to add a new record to, or edit an existing record from, this database.';
+$string['addedit'] = 'Add entry';
+$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
+$string['errorfunctionusers'] = 'a format string, and a list of user ids.';
+$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
+$string['fieldtypelabel'] = 'Report field';
+$string['viewlist_help'] = 'The value of this field on the "View list" template, which is the page to display a list of records from this database.';
+$string['viewlist'] = 'View list';
+$string['viewsingle_help'] = 'The value of this field on the "View single" template, which is the page to display a single record from this database.';
+$string['viewsingle'] = 'View single';

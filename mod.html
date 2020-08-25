@@ -32,15 +32,16 @@ data_field_admin::format_core_field($this->field, 'description');
 
 $param = 'param1';
 $value = $this->field->$param;
-$name = 'selectfield';
+$name = 'viewlist';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);
+//$text = data_field_admin::format_text_field($param, $value, $name, 40);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
 $param = 'param2';
 $value = $this->field->$param;
-$name = 'wherecondition';
+$name = 'viewsingle';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);
@@ -48,10 +49,10 @@ echo data_field_admin::format_table_row($name, $label, $text, $help);
 
 $param = 'param3';
 $value = $this->field->$param;
-$name = 'sortfield';
+$name = 'addedit';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
-$text = data_field_admin::format_text_field($param, $value, $name, 40);
+$text = data_field_admin::format_textarea_field($param, $value, $name, 2);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
 data_field_admin::mod_html_end();
