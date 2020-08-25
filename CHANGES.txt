@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-08-25 (16)
+ - add list of available function to page that defines to add/edit a report field
+
 2020-08-25 (15)
  - add specification for 'search' template
 
