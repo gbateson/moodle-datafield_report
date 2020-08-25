@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-08-25 (15)
+ - add display of search form field
+
 2020-08-25 (14)
  - redo define param1/2/3 as view/single/add format
 

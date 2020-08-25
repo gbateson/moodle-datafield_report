@@ -102,9 +102,17 @@ class data_field_report extends data_field_base {
      * on the "View list" or "View single" page
      */
     function display_browse_field($recordid, $template) {
+        return $this->display_field($recordid, $template);
+    }
+
+    /**
+     * display content for this field from a user record
+     */
+    function display_field($recordid, $template) {
         switch ($template) {
             case 'listtemplate': $param = 'param1'; break;
             case 'singletemplate': $param = 'param2'; break;
+            case 'asearchtemplate': $param = 'param3'; break;
             case 'addtemplate': $param = 'param3'; break;
             default: return ''; // shouldn't happen !!
         }
@@ -116,7 +124,7 @@ class data_field_report extends data_field_base {
                 }
                 return implode('', $arguments);
             } else {
-                return 'no arguments';   
+                return $this->field->$param;   
             }
         }
     }
@@ -127,7 +135,7 @@ class data_field_report extends data_field_base {
      * @return HTML to send to browser
      */
     function display_search_field() {
-        return 'Report field: '.$this->field->name;
+        return $this->display_field(0, 'asearchtemplate');
     }
 
     /**
@@ -135,20 +143,6 @@ class data_field_report extends data_field_base {
      */
     function image() {
         return data_field_admin::field_icon($this);
-    }
-
-    /**
-     * text export is not supported for "report" fields
-     */
-    function text_export_supported() {
-        return false;
-    }
-
-    /**
-     * text export is not supported for "report" fields
-     */
-    function export_text_value($record) {
-        return '';
     }
 
     /**
@@ -820,9 +814,6 @@ class data_field_report extends data_field_base {
                         $output = array();
                         foreach ($users as $user) {
                             $output[$user->id] = $this->format_user_name($format, $user);
-                        }
-                        if ($limitto == 1) {
-                            $output = reset($output);
                         }
                     }
                 } else {
