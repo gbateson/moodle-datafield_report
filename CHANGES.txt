@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-08-27 (17)
+ - fix meaning of CURRENT_USER, and fix meaning of GET_RECORDS
+
 2020-08-25 (16)
  - add list of available function to page that defines to add/edit a report field
 

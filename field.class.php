@@ -106,11 +106,20 @@ class data_field_report extends data_field_base {
         if ($arguments = $this->parse_arguments($recordid, $this->field->$param, 0)) {
             list($arguments, $offset) = $arguments;
             foreach ($arguments as $a => $argument) {
-                $arguments[$a] = $this->compute($recordid, $argument);
+                $argument = $this->compute($recordid, $argument);
+                if (is_array($argument)) {
+                    $msg =  get_string($template, 'data');
+                    $msg = (object)array('template' =>$msg,
+                                         'fieldname' => $this->field->name);
+                    $msg = get_string('reducearrayresult', 'datafield_report', $msg);
+                    $arguments[$a] = $msg.html_writer::alist($argument);
+                } else {
+                    $arguments[$a] = $argument;
+                }
             }
             return implode('', $arguments);
         } else {
-            return $this->field->$param;   
+            return $this->field->$param;
         }
     }
 
@@ -254,7 +263,7 @@ class data_field_report extends data_field_base {
      * @return mixed computer value of $argument
      */
     protected function compute($recordid, $argument) {
-        global $USER;
+        global $DB, $USER;
         if (is_object($argument) && property_exists($argument, 'type')) {
             if ($argument->type == 'function') {
                 if (property_exists($argument, 'name') == false || preg_match('/^\w+$/', $argument->name) == false) {
@@ -275,11 +284,24 @@ class data_field_report extends data_field_base {
             }
             if ($argument->type == 'constant') {
                 switch ($argument->value) {
-                    case 'CURRENT_USER': return $USER->id; break;
-                    case 'CURRENT_RECORD': return $recordid; break;
-                    case 'CURRENT_DATABASE': return $this->data->id; break;
-                    case 'CURRENT_COURSE': return $this->data->course; break;
-                    default: return 'Unknown constant: '.$argument->value;
+                    case 'CURRENT_USER':
+                        if (empty($recordid)) {
+                            return $USER->id;
+                        } else {
+                            return $DB->get_field('data_records', 'userid', array('id' => $recordid));
+                        }
+                        break;
+                    case 'CURRENT_RECORD':
+                        return $recordid;
+                        break;
+                    case 'CURRENT_DATABASE':
+                        return $this->data->id;
+                        break;
+                    case 'CURRENT_COURSE':
+                        return $this->data->course;
+                        break;
+                    default:
+                        return 'Unknown constant: '.$argument->value;
                 }
             }
             return 'Unkonwn argument type: '.$argument->type;
@@ -343,12 +365,12 @@ class data_field_report extends data_field_base {
             $database = $this->data->id;
         }
 
-        return $this->valid_fieldid($field, $database);
+        return $this->valid_fieldid($database, $field);
     }
 
     /**
      * compute_get_record
-     * GET_RECORD(database, user)
+     * GET_RECORD(database, field, value)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -360,13 +382,54 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_records
-     * GET_RECORD(database, users)
+     * GET_RECORDS(database, field, value)
      *
      * @param array $arguments
      * @param integer $recordid
      * @return array
      */
     protected function compute_get_records($recordid, $arguments, $multiple=true) {
+        global $DB, $USER;
+
+        $database = array_shift($arguments);
+        $database = $this->compute($recordid, $database);
+        if (empty($database)) {
+            $database = $this->data->id;
+        }
+
+        $field = array_shift($arguments);
+        $field = $this->compute($recordid, $field);
+        if (empty($field)) {
+            return '';
+        }
+
+        $value = array_shift($arguments);
+        $value = $this->compute($recordid, $value);
+
+        return $this->valid_recordids($database, $field, $value, $multiple);
+    }
+
+    /**
+     * compute_get_user_record
+     * GET_USER_RECORD(database, user)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_get_user_record($recordid, $arguments) {
+        return $this->compute_get_user_records($recordid, $arguments, false);
+    }
+
+    /**
+     * compute_get_user_records
+     * GET_USER_RECORDS(database, users)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return array
+     */
+    protected function compute_get_user_records($recordid, $arguments, $multiple=true) {
         global $DB, $USER;
 
         $database = array_shift($arguments);
@@ -383,7 +446,7 @@ class data_field_report extends data_field_base {
             $users = array($users);
         }
 
-        return $this->valid_recordids($database, $users, $multiple);
+        return $this->valid_user_recordids($database, $users, $multiple);
     }
 
     /**
@@ -400,7 +463,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_values
-     * GET_VALUE(field, records)
+     * GET_VALUES(field, records)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -423,7 +486,7 @@ class data_field_report extends data_field_base {
         }
 
         $dataid = $this->valid_dataid_from_recordids($records);
-        $fieldid = $this->valid_fieldid($field, $dataid);
+        $fieldid = $this->valid_fieldid($dataid, $field);
 
         list($select, $params) = $DB->get_in_or_equal($records);
         $select = "fieldid = ? AND recordid $select";
@@ -470,6 +533,166 @@ class data_field_report extends data_field_base {
         $groups = array_shift($arguments);
         $groups = $this->compute($recordid, $groups);
         return $this->valid_groupids($groups, $multiple);
+    }
+
+    /**
+     * compute_url
+     * FILE_URL(field, records)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    protected function compute_url($recordid, $arguments) {
+        return $this->compute_urls($recordid, $arguments, false);
+    }
+
+    /**
+     * compute_urls
+     * FILE_URLS(field, records)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    protected function compute_urls($recordid, $arguments, $multiple=true) {
+        global $CFG, $DB;
+
+        $field = array_shift($arguments);
+        $field = $this->compute($recordid, $field);
+        if (empty($field)) {
+            return '';
+        }
+
+        $records = array_shift($arguments);
+        $records = $this->compute($recordid, $records);
+        if (empty($records)) {
+            return '';
+        }
+
+        $dataid = $this->valid_dataid_from_recordids($records);
+        if (empty($dataid)) {
+            return '';
+        }
+
+        $fieldid = $this->valid_fieldid($dataid, $field);
+        if (empty($fieldid)) {
+            return '';
+        }
+        $fieldtype = $DB->get_field('data_fields', 'type', array('id' => $fieldid));
+
+        list($select, $params) = $DB->get_in_or_equal($records);
+        $select = "fieldid = ? AND recordid $select";
+        array_unshift($params, $fieldid);
+
+        if ($contents = $DB->get_records_select('data_content', $select, $params, 'id', 'id,recordid,content')) {
+
+            if ($fieldtype == 'file' || $fieldtype == 'picture') {
+                $cm = get_coursemodule_from_instance('data', $dataid);
+                $context = context_module::instance($cm->id);
+            } else {
+                $cm = null;
+                $context = null;
+            }
+
+            foreach ($contents as $id => $content) {
+                if ($fieldtype == 'file' || $fieldtype == 'picture') {
+                    $contents[$id] = "$CFG->wwwroot/pluginfile.php/$context->id/mod_data/content/$content->id/$content->content";
+                } else {
+                    $contents[$id] = $content->content;
+                }
+            }
+
+            if ($multiple) {
+                return $contents;
+            } else {
+                return reset($contents);
+            }
+        }
+
+        // Oops, no record found :-(
+        if ($multiple) {
+            return array();
+        } else {
+            return '';
+        }
+    }
+
+    /**
+     * compute_LINK
+     * LINK(url)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_link($recordid, $arguments) {
+        if ($url = $this->compute($recordid, array_shift($arguments))) {
+            $params = array('href' => $url);
+            return html_writer::tag('a', $url, $params);
+        }
+        return ''; // shouldn't happan !!
+    }
+
+    /**
+     * compute_image
+     * IMAGE(url)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_image($recordid, $arguments) {
+        if ($url = $this->compute($recordid, array_shift($arguments))) {
+            $params = array('src' => $url,
+                            'style' => 'width: 100%; '.
+                                       'height: auto; '.
+                                       'max-width: 640px;');
+            return html_writer::empty_tag('img', $params);
+        }
+        return ''; // shouldn't happan !!
+    }
+
+    /**
+     * compute_audio
+     * AUDIO(url)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_audio($recordid, $arguments) {
+        if ($url = $this->compute($recordid, array_shift($arguments))) {
+            $params = array('src' => $url,
+                            'controls' => 'controls',
+                            'style' => 'width: 100%; '.
+                                       'height: auto; '.
+                                       'max-width: 640px;');
+            return html_writer::tag('audio', '', $params);
+        }
+        return ''; // shouldn't happan !!
+    }
+
+    /**
+     * compute_video
+     * VIDEO(url)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_video($recordid, $arguments) {
+        if ($url = $this->compute($recordid, array_shift($arguments))) {
+            $params = array('src' => $url,
+                            'controls' => 'controls',
+                            'style' => 'width: 100%; '.
+                                       'height: auto; '.
+                                       'max-width: 640px;');
+            return html_writer::tag('video', '', $params);
+        }
+        return ''; // shouldn't happan !!
     }
 
     /**
@@ -577,11 +800,11 @@ class data_field_report extends data_field_base {
     /**
      * valid_fieldid
      *
-     * @param mixed $field
      * @param mixed $database
+     * @param mixed $field
      * @return mixed fieldid OR null
      */
-    protected function valid_fieldid($field, $database) {
+    protected function valid_fieldid($database, $field) {
         global $DB;
         static $fieldids = array();
 
@@ -609,12 +832,46 @@ class data_field_report extends data_field_base {
     /**
      * valid_recordids
      *
+     * @param mixed $database
+     * @param mixed $field
+     * @param mixed $value
+     * @param boolean $multiple
+     * @return mixed fieldid OR null
+     */
+    protected function valid_recordids($database, $field, $value, $multiple) {
+        global $DB;
+
+        $fieldid = $this->valid_fieldid($database, $field);
+
+        list($select, $params) = $DB->get_in_or_equal($fieldid);
+        $select = "fieldid $select AND content = ?";
+        array_push($params, $value);
+
+        if ($records = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,recordid')) {
+            if ($multiple) {
+                return array_values($records);
+            } else {
+                return reset($records);
+            }
+        }
+
+        // Oops, no record found :-(
+        if ($multiple) {
+            return array();
+        } else {
+            return '';
+        }
+    }
+
+    /**
+     * valid_user_recordids
+     *
      * @param mixed $field
      * @param mixed $database
      * @param boolean $multiple
      * @return mixed fieldid OR null
      */
-    protected function valid_recordids($database, $users, $multiple) {
+    protected function valid_user_recordids($database, $users, $multiple) {
         global $DB;
 
         $dataid = $this->valid_dataid($database);
@@ -663,9 +920,7 @@ class data_field_report extends data_field_base {
                 $course = null;
             }
 
-
             if ($course) {
-
                 $cm = get_coursemodule_from_instance('data', $dataid);
                 $context = context_module::instance($cm->id);
 
@@ -677,7 +932,7 @@ class data_field_report extends data_field_base {
                 if ($groupmode == NOGROUPS || $groupmode == VISIBLEGROUPS) {
                     $accessallusers = true;
                 } else {
-                    // $GROUPMODE == SEPARATEGROUPS
+                    // $groupmode == SEPARATEGROUPS
                     $accessallusers = has_capability('moodle/site:accessallgroups', $context);
                 }
                 if ($accessallusers) {

@@ -54,15 +54,19 @@ $string['viewsingle_help'] = 'The value of this field on the "View single" templ
 * If it is required but is blank, then the "View list" value for this field will be used instead.';
 $string['viewsingle'] = 'View single';
 
+$string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the {$a->fieldname} field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
 $string['reportfieldintroduction'] = 'On this page, you can define the output format for this field on the the four main templates in this database - "View list", "View single", "Search" and "Add entry". The output format is specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel.';
 $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
 *   CURRENT_USER
-:   the id of the current user, i.e. the user currently looking at the database
+:   the id of the user who created the current record
 
 *   CURRENT_RECORD
 :   the id of the current record
+
+*   CURRENT_RECORDS
+:   an array of the ids of records created by the current user in the current database
 
 *   CURRENT_DATABASE
 :   the id of the current database activity
@@ -71,37 +75,40 @@ $string['reportfieldfunctions'] = '
 :   the id of the current course
 
 *   CURRENT_USERS
-:   an array of userids that the current user can interact with in the current course.
-:   if the activity is using separate groups, then this list contains only the users in the current group.
-
-*   CURRENT_RECORDS
-:   an array of record ids that the current user can access.
+:   an array of userids that the current user can interact with in the current course
+:   If the database activity is using separate groups, this list contains only the users in groups to which the current user belongs.
 
 *   CURRENT_GROUPS
-:   an array of group ids that the current can access
+:   an array of groupids that the current user belongs to
 
 *   DEFAULT_NAME_FORMAT
 :   the default name format for the current language
 
 #### Functions to extract ids and values
 
-*   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
-:   return a single dataid
-
-*   GET_FIELD(field, databaseid)
-:   return a single fieldid
-
-*   GET_RECORD(database=CURRENT_DATABASE, user=CURRENT_USER)
-:   return a single recordid
-
-*   GET_RECORDS(database=CURRENT_DATABASE, user=CURRENT_USER)
-:   return an array of recordids
-
 *   GET_VALUE(field, record=CURRENT_RECORD)
 :   return a single value
 
 *   GET_VALUES(field, records=CURRENT_RECORD)
 :   return an array of values
+
+*   GET_FIELD(field, database=CURRENT_DATABASE)
+:   return a single fieldid
+
+*   GET_RECORD(database=CURRENT_DATABASE, field, value)
+:   return a single recordid
+
+*   GET_RECORDS(database=CURRENT_DATABASE, field, value)
+:   return an array of recordids
+
+*   GET_USER_RECORD(database=CURRENT_DATABASE, user=CURRENT_USER)
+:   return a single recordid
+
+*   GET_USER_RECORDS(database=CURRENT_DATABASE, user=CURRENT_USER)
+:   return an array of recordids
+
+*   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
+:   return a single dataid
 
 *   GET_GROUP(group=CURRENT_GROUPS, course=CURRENT_COURSE)
 :   return a single groupid
@@ -115,39 +122,79 @@ $string['reportfieldfunctions'] = '
 *   GET_COURSE_USERS(course=CURRENT_COURSE)
 :   return an array of userids
 
-#### Functions to format ids and values
+#### Functions to format ids and values for output
 
-*   USER(format=DEFAULT_FORMAT, userid=CURRENT_USER)
+*   USER(format=DEFAULT_NAME_FORMAT, userid=CURRENT_USER)
 :   return the formatted user name of the specified user
 
-*   USERS(format=DEFAULT_FORMAT, userids=CURRENT_USERS)
+*   USERS(format=DEFAULT_NAME_FORMAT, userids=CURRENT_USERS)
 :   return an array of formatted user names
 
 *   MENU(items)
 :   return a drop down menu of items
 
 *   CHECKBOXES(items)
-:   return set of checkboxes, one for each items
+:   return set of checkboxes, one for each item
 
 *   RADIOBUTTONS(items)
-:   return set of radio buttons, one for each items
+:   return set of radio buttons, one for each item
 
-*   VIDEO(url)
-:   format the URL as a HTML5 &lt;video&gt; tag
+*   TEXT(value)
+:   return a &lt;INPUT type="text" value="value" ...&gt; form item for the given value
 
-*   AUDIO(url)
-:   format the URL as a HTML5 &lt;audio&gt; tag
+*   TEXTAREA(value)
+:   return a &lt;TEXTAREA&gt; form item for the given value
+
+*   URL(field, record=CURRENT_RECORD)
+:   return the url of the field in the specified record
+:   "file" and "picture" fields will be converted to the apropriate Moodle URL.
+
+*   LINK(url)
+:   format an &lt;a&gt; tag for the given url.
 
 *   IMAGE(url)
-:   format the URL as a &lt;img&gt; tag
+:   format an &lt;img&gt; tag for the given url.
 
-*   MENU(USERS("Firstname LASTNAME", GET_GROUP_USERS()))
+*   AUDIO(url)
+:   format an HTML5 &lt;audio&gt; tag for the given url.
+
+*   VIDEO(url)
+:   return an HTML5 &lt;video&gt; tag for the given url.
+
+*   LIST(listtype, values)
+:   return a bullet list (UL), a numbered list (OL), or a data list (DL) using the values
+
+#### Functions to reduce an array to a single item
+
+*   AVG(values)
+:   return the average of the values
+
+*   MAX(values)
+:   return the maximum value
+
+*   MIN(values)
+:   return the minimum value
+
+*   SORT(values)
+:   return a sorted list of values
+
+*   SUM(values)
+:   return the sum of the values
+
+*   CONCAT(value1, value2, ...)
+:   return a long string produced by concatenating the values together
+
+*   JOIN(shortstring, values)
+:   return a long string produced by joining the values together with the shortstring
+
+*   MERGE(list1, list2, ...)
+:   return a long list produced by merging the lists together
 
 #### Arguments for functions
 
-*   course" can be one of the following:
-:   a course id number
-:   otherwise, a string that matches the shortname of course on this Moodle site.
+*   "field" can be one of the following:
+:   the numeric id of a field
+:   a string that matches the name of a field
 
 *   "database" can be one of the following:
 :   a database id number
@@ -156,22 +203,22 @@ $string['reportfieldfunctions'] = '
 :   cmid=99 a course module id number
 :   otherwise, a string that matches the name of database in the specified course.
 
-*   "field" can be one of the following:
-:   the numeric id of a field
-:   a string that matches the name of a field
-
-*   "user" can be one of the following:
-:   the numeric id of a user
-:   a string that matches the "Firstname LASTNAME" of a user
+*   "course" can be one of the following:
+:   a course id number
+:   otherwise, a string that matches the shortname of a course on this Moodle site.
 
 *   "group" can be one of the following
 :   the id of a group in the specified course
 :   a string that matches the name of a group in the specified course
 
+*   "user" can be one of the following:
+:   the numeric id of a user
+:   a string that matches the "Firstname LASTNAME" of a user
+
 *   "format" can be one of the following
 :   the word "default", in which case the default for name format for the current language will be used 
 :   a string containing the names of one or more name fields from a user record e.g. Firstname LASTNAME
-    -   If a name field is UPPERCASE in the format string, the value of that name field in the output will also be UPPERCASE
-    -   If a name field is Titlecase in the format string, the value of that name field in the output will also be Titlecase
-    -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase
+    -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH" 
+    -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
+    -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 ';
