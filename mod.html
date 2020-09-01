@@ -38,38 +38,47 @@ data_field_admin::mod_html_start($this->field);
 data_field_admin::format_core_field($this->field, 'name');
 data_field_admin::format_core_field($this->field, 'description');
 
-// viewlist (param1)
+// output format (param1) for view list/single templates
 $param = 'param1';
 $value = (empty($this->field->$param) ? '' : $this->field->$param);
-$name = 'viewlist';
+$name = 'inputformat';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);
 //$text = data_field_admin::format_text_field($param, $value, $name, 40);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
-// viewsingle (param2)
+// input format (param2) for add/edit/search form fields
 $param = 'param2';
 $value = (empty($this->field->$param) ? '' : $this->field->$param);
-$name = 'viewsingle';
+$name = 'outputformat';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
-// asearch (param3)
+// additional format (param3)
 $param = 'param3';
 $value = (empty($this->field->$param) ? '' : $this->field->$param);
-$name = 'asearch';
+$name = 'extraformat1';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
-// add/edit entry (param4)
+// additional format (param4)
 $param = 'param4';
 $value = (empty($this->field->$param) ? '' : $this->field->$param);
-$name = 'addedit';
+$name = 'extraformat2';
+$label = get_string($name, 'datafield_report');
+$help = $OUTPUT->help_icon($name, 'datafield_report');
+$text = data_field_admin::format_textarea_field($param, $value, $name, 2);
+echo data_field_admin::format_table_row($name, $label, $text, $help);
+
+// additional format (param5)
+$param = 'param5';
+$value = (empty($this->field->$param) ? '' : $this->field->$param);
+$name = 'extraformat3';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
 $text = data_field_admin::format_textarea_field($param, $value, $name, 2);

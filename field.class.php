@@ -37,10 +37,9 @@ require_once($CFG->dirroot.'/mod/data/field/admin/field.class.php');
 class data_field_report extends data_field_base {
     var $type = 'report';
 
-    // param1: format for listtemplate
-    // param2: format for singletemplate
-    // param3: format for asearchtemplate
-    // param4: format for addtemplaate
+    // param1: format for addtemplaate and asearchtemplate
+    // param2: format for listtemplate and singletemplate
+    // param3, param4, param 5: extra format strings
 
     var $teachers = null;
 
@@ -82,26 +81,57 @@ class data_field_report extends data_field_base {
      */
     function display_field($recordid, $template) {
         switch ($template) {
-            case 'listtemplate': $param = 'param1'; break;
-            case 'singletemplate': $param = 'param2'; break;
-            case 'asearchtemplate': $param = 'param3'; break;
-            case 'addtemplate': $param = 'param3'; break;
-            default: return ''; // shouldn't happen !!
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+                $param = 'param'.$template;
+                break;
+
+            case 'param1':
+            case 'param2':
+            case 'param3':
+            case 'param4':
+            case 'param5':
+                $param = $template;
+                break;
+
+            case 'extra1':
+                $param = 'param3';
+                break;
+            case 'extra2':
+                $param = 'param4';
+                break;
+            case 'extra3':
+                $param = 'param5';
+                break;
+
+            case 'add':
+            case 'edit':
+            case 'input':
+            case 'addtemplate':
+            case 'asearchtemplate':
+                $param = 'param1';
+                break;
+
+            case '':
+            case 'view':
+            case 'list':
+            case 'single':
+            case 'output':
+            case 'listtemplate':
+            case 'singletemplate':
+                $param = 'param2';
+                break;
+
+            default:
+                // Format is not recognized.
+                return '';
         }
-        if (substr($this->field->$param, 0, 8) == 'SAME_AS_') {
-            switch (substr($this->field->$param, 8)) {
-                case 'VIEW_LIST': $param = 'param1'; break;
-                case 'VIEW_SINGLE': $param = 'param2'; break;
-                case 'ADV_SEARCH': $param = 'param3'; break;
-                case 'ADD_ENTRY': $param = 'param3'; break;
-            }
-        } else if (empty($this->field->$param)) {
-            switch ($param) {
-                case 'param1': $param = 'param2'; break;
-                case 'param2': $param = 'param1'; break;
-                case 'param3': $param = 'param4'; break;
-                case 'param4': $param = 'param3'; break;
-            }
+        if (empty($this->field->$param)) {
+            // Requested format is empty :-(
+            return '';
         }
         if ($arguments = $this->parse_arguments($recordid, $this->field->$param, 0)) {
             list($arguments, $offset) = $arguments;
@@ -776,33 +806,52 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_list
-     * LIST(listtype, list)
+     * LIST(type, list)
      *
      * @param integer $recordid
      * @param array $arguments
      * @return integer
      */
     protected function compute_list($recordid, $arguments) {
-        $listtype = $this->compute($recordid, array_shift($arguments));
-        $listitems = $this->compute($recordid, array_shift($arguments));
-        return $this->format_list($listtype, $listitems);
+        $type = $this->compute($recordid, array_shift($arguments));
+        $items = $this->compute($recordid, array_shift($arguments));
+        return $this->format_list($type, $items);
     }
 
     /**
      * format_list
-     * LIST(listtype, list)
+     * LIST(type, list)
      *
      * @param integer $recordid
      * @param array $arguments
      * @return integer
      */
-    protected function format_list($listtype, $items) {
+    protected function format_list($type, $items, $params=null) {
+        $list = '';
         if (is_array($items)) {
 
-            $listtype = strtolower($listtype);
-            $params = array('class' => $this->field->name);
+            $type = strtolower($type);
 
-            if ($listtype == 'dl') {
+            // Use default list type, if necessary.
+            $types = array('ul', 'ol', 'dl');
+            if (! in_array($type, $types))  {
+                $type = reset($types);
+            }
+
+            // Set CSS class for the list.
+            $name = 'class';
+            $value = $this->field->name;
+            if (is_array($params)) {
+                if (empty($params[$name])) {
+                    $params[$name] = $value;
+                } else {
+                    $params[$name] .= ' '.$value;
+                }
+            } else {
+                $params = array($name => $value);
+            }
+
+            if ($type == 'dl') {
                 $count = 0;
                 foreach ($items as $id => $item) {
                     $count++;
@@ -812,26 +861,76 @@ class data_field_report extends data_field_base {
                         $items[$id] = html_writer::tag('dd', $item);
                     }
                 }
-                if (empty($items)) {
-                    return '';
-                } else {
-                    return html_writer::tag('dl', implode('', $items), $params);
+                if (count($items)) {
+                    $list = html_writer::tag('dl', implode('', $items), $params);
+                }
+            } else {
+                $items = array_filter($items);
+                if (count($items)) {
+                    $list = html_writer::alist($items, $params, $type);
                 }
             }
+        }
+        return $list;
+    }
 
-            $items = array_filter($items);
-            if (empty($items)) {
-                return '';
-            }
+    /**
+     * format_count_list
+     * COUNT_LIST(type, list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_count_list($recordid, $arguments, $addtotal=true) {
+        $items = $this->compute($recordid, array_shift($arguments));
 
-            if (strcmp($listtype, 'ul')) {
-                $listtype = 'ol';
-            }
-            return html_writer::alist($items, $params, $listtype);
+        if (empty($items)) {
+            return '';
         }
 
-        // no items :-(
-        return '';
+        if (is_scalar($items)) {
+            $items = array($items);
+        }
+
+        $counts = array();
+        foreach ($items as $item) {
+            if (array_key_exists($item, $counts)) {
+                $counts[$item]++;
+            } else {
+                $counts[$item] = 1;
+            }
+        }
+
+        $total = array_sum($counts);
+
+        // Sort by descending value, and maintain keys
+        foreach ($counts as $item => $count) {
+            if ($count == 1) {
+                $strname = 'countvote';
+            } else {
+                $strname = 'countvotes';
+            }
+            $count = get_string($strname, 'datafield_report', $count);
+            $count = html_writer::span($count, 'text-muted');
+            $counts[$item] = html_writer::span($count.$item, 'countvotes');
+        }
+
+        arsort($counts);
+        $counts = array_values($counts);
+
+        if ($addtotal) {
+            if ($total == 1) {
+                $strname = 'totalvote';
+            } else {
+                $strname = 'totalvotes';
+            }
+            $total = get_string($strname, 'datafield_report', $total);
+            $total = html_writer::span($total, 'border-top border-dark text-success');
+            $counts[$item] = html_writer::span($total, 'totalvotes');
+        }
+
+        return $this->format_list('ul', $counts, array('class' => 'list-unstyled'));
     }
 
     /**

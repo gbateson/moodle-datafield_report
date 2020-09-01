@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-09-01 (19)
+ - restructure param1-5 to input, output, extra1-3
+
 2020-08-31 (18)
  - rename GET_RECORDS to GET_USER_RECORDS, and implment new GET_RECORDS(database, field, user)
 

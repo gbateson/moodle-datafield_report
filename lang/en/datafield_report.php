@@ -29,31 +29,32 @@
 $string['pluginname'] = 'Report';
 
 /** more strings */
-$string['addedit_help'] = 'The value of this field on the "Add entry" template, which is the page to add a new record to, or edit an existing record from, this database.
+$string['countvote'] = '[{$a} vote] ';
+$string['countvotes'] = '[{$a} votes] ';
+$string['extraformat_help'] = 'An additional format for this field that may be useful in AJAX.
 
-* If this field is not required on the "Add entry" template, it can be left blank.
-* If it is required but is blank, then the "Search" value for this field will be used instead.';
-$string['addedit'] = 'Add entry';
-$string['asearch_help'] = 'The value of this field on the "Advanced search" template, which is the page to select records from this database.
+AJAX calls can be made to the following script, using the parameters given below
 
-* If this field is not required on the "Advanced search" template, it can be left blank.
-* If it is required but is blank, then the "Add entry" value for this field will be used instead.';
-$string['asearch'] = 'Search';
+* mod/data/field/report/field.ajax.php
+  * **d**: database id
+  * **f**: database field name
+  * **p**: parameter name (param1 - param5)
+  * **sesskey:** the session key for the current user
+';
+$string['extraformat1_help'] = $string['extraformat_help'];
+$string['extraformat1'] = 'Extra format (1)';
+$string['extraformat2_help'] = $string['extraformat_help'];
+$string['extraformat2'] = 'Extra format (2)';
+$string['extraformat3_help'] = $string['extraformat_help'];
+$string['extraformat3'] = 'Extra format (3)';
 $string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
 $string['errorfunctionusers'] = 'a format string, and a list of user ids.';
 $string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
 $string['fieldtypelabel'] = 'Report field';
-$string['viewlist_help'] = 'The value of this field on the "View list" template, which is the page to display a list of records from this database.
-
-* If this field is not required on the "View list" template, it can be left blank.
-* If it is required but is blank, then the "View single" value for this field will be used instead.';
-$string['viewlist'] = 'View list';
-$string['viewsingle_help'] = 'The value of this field on the "View single" template, which is the page to display a single record from this database.
-
-* If this field is not required on the "View single" template, it can be left blank.
-* If it is required but is blank, then the "View list" value for this field will be used instead.';
-$string['viewsingle'] = 'View single';
-
+$string['inputformat_help'] = 'The format of this field on the "Add entry" and "Advanced search" templates.';
+$string['inputformat'] = 'Input format';
+$string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
+$string['outputformat'] = 'Output format';
 $string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the {$a->fieldname} field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
 $string['reportfieldintroduction'] = 'On this page, you can define the output format for this field on the the four main templates in this database - "View list", "View single", "Search" and "Add entry". The output format is specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel.';
 $string['reportfieldfunctions'] = '
@@ -222,3 +223,5 @@ $string['reportfieldfunctions'] = '
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 ';
+$string['totalvote'] = '[{$a} vote in total]';
+$string['totalvotes'] = '[{$a} votes in total]';
