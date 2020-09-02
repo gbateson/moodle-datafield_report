@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-09-02 (21)
+ - add new files for AJAX and JS functionality
+
 2020-09-02 (20)
  - fix code to get list users in my groups
 
