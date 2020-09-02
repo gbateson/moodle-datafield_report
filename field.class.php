@@ -979,10 +979,12 @@ class data_field_report extends data_field_base {
         if ($last == '*') {
             $text = substr($text, 0, -1).'%';
         }
+        $text = str_replace('*', '%', $text);
 
         if (strpos($text, '%') === false) {
             $select = "$name = ?";
         } else {
+            $text = preg_replace('/%%+/', '%', $text);
             $select = $DB->sql_like($name, '?');
         }
         return array($select, array($text));
@@ -1287,22 +1289,24 @@ class data_field_report extends data_field_base {
         $output = '';
 
         $select = '';
-        if (empty($arguments[0])) {
+        if (empty($arguments)) {
             $groups = groups_get_activity_allowed_groups($this->cm);
             if (is_array($groups) && count($groups)) {
                 list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
             }
         } else {
-            switch (true) {
+            $argument = array_shift($arguments);
+            switch ($argument->type) {
 
-                case $arguments[0]->type == 'string':
-                    $params = array('name' => $arguments[0]->value,
-                                    'course' => $this->data->course);
-                    $groupid = $DB->get_field('groups', 'id', $params);
+                case 'string':
+                    list($select, $params) = $this->get_sql_like('name', $argument->value);
+                    $select = "course = ? AND name $select";
+                    array_unshift($params, $this->data->course);
+                    $groupid = $DB->get_field_select('groups', 'id', $select, $params);
                     break;
 
-                case $arguments[0]->type == 'integer':
-                    $params = array('id' => $arguments[0]->value,
+                case 'integer':
+                    $params = array('id' => $argument->value,
                                     'course' => $this->data->course);
                     $groupid = $DB->get_field('groups', 'id', $params);
                     break;
@@ -1316,14 +1320,16 @@ class data_field_report extends data_field_base {
             }
         }
         if ($select) {
-            if ($users = $DB->get_records_select('groups_members', "groupid $select", $params, 'id', 'DISTINCT id, userid')) {
+            if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'userid', 'id, userid')) {
+                $userids = array_unique($userids);
+                $userids = array_flip($userids);
                 if ($teachers = $this->get_teachers()) {
                     foreach ($teachers as $teacher) {
-                        unset($users[$teacher->id]);
+                        unset($userids[$teacher->id]);
                     }
                 }
-                if (count($users)) {
-                    $output = array_keys($users);
+                if (count($userids)) {
+                    $output = array_flip($userids);
                 }
             }
         }

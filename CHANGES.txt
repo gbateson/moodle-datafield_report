@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-09-02 (20)
+ - fix code to get list users in my groups
+
 2020-09-01 (19)
  - restructure param1-5 to input, output, extra1-3
 
