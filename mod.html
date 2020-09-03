@@ -26,17 +26,17 @@
 
 // Introduction
 $text = format_text(get_string('reportfieldintroduction', 'datafield_report'), FORMAT_MARKDOWN);
-$params = array('class' => 'bg-light border border-dark rounded mt-2 mb-4 pt-2 px-3',
-                'style' => 'max-width: 720px;');
+$params = array('class' => 'bg-light border border-dark rounded mt-2 mb-4 pt-2 px-3');
 echo html_writer::tag('div', $text, $params);
 
 // Start list (DL)
 data_field_admin::set_bootstrap(true);
 data_field_admin::mod_html_start($this->field);
 
-// Core fields (name + description)
+// Core fields (name + description + required)
 data_field_admin::format_core_field($this->field, 'name');
 data_field_admin::format_core_field($this->field, 'description');
+data_field_admin::format_required_field($this->field);
 
 // output format (param1) for view list/single templates
 $param = 'param1';
@@ -90,12 +90,10 @@ data_field_admin::mod_html_end();
 // Mini-manual of functions
 $text = format_text(get_string('reportfieldfunctions', 'datafield_report'), FORMAT_MARKDOWN);
 
-$params = array('class' => 'rounded bg-secondary text-dark mx-0 my-2 p-2',
-                'style' => 'max-width: 720px;');
+$params = array('class' => 'rounded bg-secondary text-dark mx-0 my-2 p-2');
 $text = str_replace('<h4>', html_writer::start_tag('h4', $params), $text);
 
-$params = array('class' => 'bg-light border border-dark rounded mx-0 my-1 py-0 px-2',
-                'style' => 'max-width: 720px;');
+$params = array('class' => 'bg-light border border-dark rounded mx-0 my-1 py-0 px-2');
 echo html_writer::tag('div', $text, $params);
 
 data_field_admin::require_js("/mod/data/field/report/mod.html.js", true);

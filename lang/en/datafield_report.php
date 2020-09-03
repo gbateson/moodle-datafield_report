@@ -29,6 +29,7 @@
 $string['pluginname'] = 'Report';
 
 /** more strings */
+$string['averageofvalues'] = ' [the average of {$a} values]';
 $string['countvote'] = '[{$a} vote] ';
 $string['countvotes'] = '[{$a} votes] ';
 $string['extraformat_help'] = 'An additional format for this field that may be useful in AJAX.
@@ -36,10 +37,29 @@ $string['extraformat_help'] = 'An additional format for this field that may be u
 AJAX calls can be made to the following script, using the parameters given below
 
 * mod/data/field/report/field.ajax.php
-  * **d**: database id
+  * **sesskey:** the session key for the current user (available via TMP->get_sesskey())
+  * **d**: database id (available via TMP.get_url_param("d"))
   * **f**: database field name
-  * **p**: parameter name (param1 - param5)
-  * **sesskey:** the session key for the current user
+  * **p**: parameter name (1 - 5, param1 - param5, "input", "output", "add", "edit", or "view", extra1 - extra3)
+  * **uid**: an optional user id that may be needed to generate the AJAX output
+
+You can then initiate the AJAX call using the TMP.ajax object, thus:
+
+    var url = document.location.href;
+    url.replace(
+        new RegExp("(/mod/data)/.*$"),
+        "$1/field/report/field.ajax.php"
+    );
+    var data = {
+        "sesskey": TMP->get_sesskey(),
+        "d": TMP.get_url_param("d"),
+        "f": "somefieldname",
+        "p": "extra1",
+        "uid": "somevalue"
+    };
+    TMP.ajax.post(url, data, function(responsetext){
+        // do something with responsetext
+    });
 ';
 $string['extraformat1_help'] = $string['extraformat_help'];
 $string['extraformat1'] = 'Extra format (1)';
@@ -53,10 +73,12 @@ $string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
 $string['fieldtypelabel'] = 'Report field';
 $string['inputformat_help'] = 'The format of this field on the "Add entry" and "Advanced search" templates.';
 $string['inputformat'] = 'Input format';
+$string['maximumofvalues'] = ' [the maximum of {$a} values]';
+$string['minimumofvalues'] = ' [the minimum of {$a} values]';
 $string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
 $string['outputformat'] = 'Output format';
 $string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the {$a->fieldname} field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
-$string['reportfieldintroduction'] = 'On this page, you can define the output format for this field on the the four main templates in this database - "View list", "View single", "Search" and "Add entry". The output format is specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel.';
+$string['reportfieldintroduction'] = 'On this page, you can define the rules to format this field for input and output. The formats are specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel. Details of the functions are available in the "Mini manual" at the bottom of this page.';
 $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
@@ -162,8 +184,11 @@ $string['reportfieldfunctions'] = '
 *   VIDEO(url)
 :   return an HTML5 &lt;video&gt; tag for the given url.
 
-*   LIST(listtype, values)
-:   return a bullet list (UL), a numbered list (OL), or a data list (DL) using the values
+*   LIST(values, listtype)
+:   return the values formatted as an HTML list depending on the listtype ("UL", "OL" or "DL")
+
+*   COUNT_LIST(values)
+:   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values.
 
 #### Functions to reduce an array to a single item
 
@@ -191,6 +216,23 @@ $string['reportfieldfunctions'] = '
 *   MERGE(list1, list2, ...)
 :   return a long list produced by merging the lists together
 
+*   SCORE(scoretype, field, records=CURRENT_RECORD)
+:   return the score of the given field in the given records.
+:   the "scoretype" can be one of the following: avg, max, min, sum
+:   if the field is a menu of text items, the score for each value will be calculated from its position in the menu, highest to lowest.
+
+*   SCORE_AVG(field, records=CURRENT_RECORD)
+:   shortcut for SCORE("avg", field, records=CURRENT_RECORD)
+
+*   SCORE_MAX(field, records=CURRENT_RECORD)
+:   shortcut for SCORE("max", field, records=CURRENT_RECORD)
+
+*   SCORE_MIN(field, records=CURRENT_RECORD)
+:   shortcut for SCORE("min", field, records=CURRENT_RECORD)
+
+*   SCORE_SUM(field, records=CURRENT_RECORD)
+:   shortcut for SCORE("sum", field, records=CURRENT_RECORD)
+
 #### Arguments for functions
 
 *   "field" can be one of the following:
@@ -217,11 +259,12 @@ $string['reportfieldfunctions'] = '
 :   a string that matches the "Firstname LASTNAME" of a user
 
 *   "format" can be one of the following
-:   the word "default", in which case the default for name format for the current language will be used 
+:   the word "default", in which case the default for name format for the current language will be used
 :   a string containing the names of one or more name fields from a user record e.g. Firstname LASTNAME
-    -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH" 
+    -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH"
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 ';
+$string['sumofvalues'] = ' [the sum of {$a} values]';
 $string['totalvote'] = '[{$a} vote in total]';
 $string['totalvotes'] = '[{$a} votes in total]';

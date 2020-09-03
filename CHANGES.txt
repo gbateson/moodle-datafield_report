@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-09-03 (22)
+ - fix wording of some lang strings and add 'required' field to mod.html
+
 2020-09-02 (21)
  - add new files for AJAX and JS functionality
 

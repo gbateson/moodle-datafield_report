@@ -11,6 +11,14 @@
 
     RPT.wwwroot = location.href.replace(new RegExp("/mod/data/.*$"), "")
 
+    RPT.fix_page_id = function() {
+        var body = document.getElementById("path-mod-data-field-");
+        var type = document.querySelector("form#editfield input[type=hidden][name=type]");
+        if (body && type) {
+            body.id += type.value;
+        }
+    };
+
     RPT.setup_section_toggle = function(){
         document.querySelectorAll("h4").forEach(function(h4){
 
@@ -51,6 +59,7 @@
     };
 
     RPT.setup = function() {
+        RPT.fix_page_id();
         RPT.setup_section_toggle();
     };
 
