@@ -384,12 +384,15 @@ class data_field_report extends data_field_base {
             }
             if ($argument->type == 'constant') {
                 switch ($argument->value) {
-                    case 'CURRENT_USER':
+                    case 'RECORD_USER':
                         if (empty($recordid)) {
                             return optional_param('uid', $USER->id, PARAM_INT);
                         } else {
                             return $DB->get_field('data_records', 'userid', array('id' => $recordid));
                         }
+                        break;
+                    case 'CURRENT_USER':
+                        return $USER->id;
                         break;
                     case 'CURRENT_RECORD':
                         return $recordid;
