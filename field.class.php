@@ -1009,6 +1009,165 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * compute_avg
+     * AVG(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_avg($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return 0;
+        }
+        return round(array_sum($items) / count($items), 1);
+    }
+
+    /**
+     * compute_count
+     * COUNT(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_count($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return 0;
+        }
+        return count($items);
+    }
+
+    /**
+     * compute_max
+     * MAX(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_max($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return 0;
+        }
+        return max($items);
+    }
+
+    /**
+     * compute_min
+     * MIN(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_min($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return 0;
+        }
+        return min($items);
+    }
+
+    /**
+     * compute_sum
+     * SUM(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_sum($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return 0;
+        }
+        return array_sum($items);
+    }
+
+    /**
+     * compute_concat
+     * CONCAT(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_concat($recordid, $arguments) {
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return '';
+        }
+        return implode('', $items);
+    }
+
+    /**
+     * compute_join
+     * JOIN(shortstring, list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_join($recordid, $arguments) {
+        $str = $this->compute($recordid, array_shift($arguments));
+        $items = $this->get_list_items($recordid, $arguments);
+        if (empty($items)) {
+            return '';
+        }
+        return implode($str, $items);
+    }
+
+    /**
+     * compute_merge
+     * MERGE(list1, list2, ...)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array
+     */
+    protected function compute_merge($recordid, $arguments) {
+        $merge = array();
+        while ($items = $this->get_list_items($recordid, $arguments)) {
+            if (empty($items)) {
+                continue;
+            }
+            if (is_scalar($items)) {
+                $merge[] = $items;
+            } else {
+                $merge = array_merge($merge, $items);
+            }
+        }
+        return $merge;
+    }
+
+    /**
+     * get_list_items
+     *
+     * @param integer $recordid
+     * @param array $argument
+     * @return integer
+     */
+    protected function get_list_items($recordid, $items) {
+        if (empty($items)) {
+            return array();
+        }
+        if (is_scalar($items)) {
+            return array($items);
+        }
+        if (is_array($items)) {
+            foreach ($items as $i => $item) {
+                $items[$i] = $this->compute($recordid, $item);
+            }
+            $items = array_filter($items);
+        }
+        return $items;
+    }
+
+    /**
      * compute_score
      * SCORE_LIST(scoretype, field, records)
      *
@@ -1021,7 +1180,7 @@ class data_field_report extends data_field_base {
         return $this->score($scoretype, $recordid, $arguments);
     }
 
-     /**
+    /**
      * compute_score_avg
      * SCORE_AVG(field, records)
      *
@@ -1033,7 +1192,7 @@ class data_field_report extends data_field_base {
         return $this->score('avg', $recordid, $arguments);
     }
 
-     /**
+    /**
      * compute_score_max
      * SCORE_MAX(field, records)
      *
@@ -1045,7 +1204,7 @@ class data_field_report extends data_field_base {
         return $this->score('max', $recordid, $arguments);
     }
 
-     /**
+    /**
      * compute_score_min
      * SCORE_MIN(field, records)
      *
@@ -1057,7 +1216,7 @@ class data_field_report extends data_field_base {
         return $this->score('max', $recordid, $arguments);
     }
 
-     /**
+    /**
      * compute_score_sum
      * SCORE_SUM(field, records)
      *
@@ -1146,24 +1305,6 @@ class data_field_report extends data_field_base {
                 $score = $scoretype.get_string('labelsep', 'langconfig').implode(', ', $score);
         }
         return html_writer::span($score, 'score'); 
-    }
-
-    /**
-     * compute_count
-     * COUNT(list)
-     *
-     * @param integer $recordid
-     * @param array $arguments
-     * @return integer
-     */
-    protected function compute_count($recordid, $arguments) {
-        $list = $this->compute($recordid, array_shift($arguments));
-        if (is_array($list)) {
-            $list = array_filter($list);
-            return count($list);
-        } else {
-            return (empty($list) ? 0 : 1);
-        }
     }
 
     /**

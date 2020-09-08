@@ -83,6 +83,9 @@ $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
 *   CURRENT_USER
+:   the id of the user who is viewing the curent record
+
+*   RECORD_USER
 :   the id of the user who created the current record
 
 *   CURRENT_RECORD
@@ -187,6 +190,9 @@ $string['reportfieldfunctions'] = '
 *   LIST(values, listtype)
 :   return the values formatted as an HTML list depending on the listtype ("UL", "OL" or "DL")
 
+*   SORT(values)
+:   return a sorted list of values
+
 *   COUNT_LIST(values)
 :   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values.
 
@@ -195,14 +201,14 @@ $string['reportfieldfunctions'] = '
 *   AVG(values)
 :   return the average of the values
 
+*   COUNT(values)
+:   return the number of values
+
 *   MAX(values)
 :   return the maximum value
 
 *   MIN(values)
 :   return the minimum value
-
-*   SORT(values)
-:   return a sorted list of values
 
 *   SUM(values)
 :   return the sum of the values
