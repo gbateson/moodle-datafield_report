@@ -899,10 +899,7 @@ class data_field_report extends data_field_base {
      */
     protected function compute_image($recordid, $arguments) {
         if ($url = $this->compute($recordid, array_shift($arguments))) {
-            $params = array('src' => $url,
-                            'style' => 'width: 100%; '.
-                                       'height: auto; '.
-                                       'max-width: 640px;');
+            $params = array('src' => $url);
             return html_writer::empty_tag('img', $params);
         }
         return ''; // shouldn't happen !!
@@ -920,9 +917,7 @@ class data_field_report extends data_field_base {
         if ($url = $this->compute($recordid, array_shift($arguments))) {
             $params = array('src' => $url,
                             'controls' => 'controls',
-                            'style' => 'width: 100%; '.
-                                       'height: auto; '.
-                                       'max-width: 640px;');
+                            'preload' => 'metadata');
             return html_writer::tag('audio', '', $params);
         }
         return ''; // shouldn't happen !!
@@ -939,11 +934,9 @@ class data_field_report extends data_field_base {
     protected function compute_video($recordid, $arguments) {
         if ($url = $this->compute($recordid, array_shift($arguments))) {
             $params = array('src' => $url,
-                            'controls' => 'controls',
-                            'playsinline' => 'true',
-                            'style' => 'width: 100%; '.
-                                       'height: auto; '.
-                                       'max-width: 640px;');
+                            'controls' => 'true',
+                            'preload' => 'metadata',
+                            'playsinline' => 'true');
             return html_writer::tag('video', '', $params);
         }
         return ''; // shouldn't happen !!
