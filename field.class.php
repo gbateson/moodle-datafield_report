@@ -41,7 +41,8 @@ class data_field_report extends data_field_base {
     // param2: format for listtemplate and singletemplate
     // param3, param4, param 5: extra format strings
 
-    var $teachers = null;
+    var $studentids = null;
+    var $teacherids = null;
 
     const REGEXP_FUNCTION_START = '/^\s*(\w+)\s*\(/s';
     const REGEXP_FUNCTION_END = '/^\s*\)/s';
@@ -363,7 +364,7 @@ class data_field_report extends data_field_base {
      * @return mixed computer value of $argument
      */
     protected function compute($recordid, $argument) {
-        global $DB, $USER;
+        global $CFG, $DB, $USER;
         if (is_object($argument) && property_exists($argument, 'type')) {
             if ($argument->type == 'function') {
                 if (property_exists($argument, 'name') == false || preg_match('/^\w+$/', $argument->name) == false) {
@@ -384,6 +385,7 @@ class data_field_report extends data_field_base {
             }
             if ($argument->type == 'constant') {
                 switch ($argument->value) {
+
                     case 'RECORD_USER':
                         if (empty($recordid)) {
                             return optional_param('uid', $USER->id, PARAM_INT);
@@ -391,23 +393,63 @@ class data_field_report extends data_field_base {
                             return $DB->get_field('data_records', 'userid', array('id' => $recordid));
                         }
                         break;
+
                     case 'CURRENT_USER':
                         return $USER->id;
                         break;
+
                     case 'CURRENT_RECORD':
                         return $recordid;
                         break;
+
+                    case 'CURRENT_RECORDS':
+                        $params = array('dataid' => $$this->data->id, 'userid' => $USER->id);
+                        return $DB->get_records_menu('data_records', $params, 'id', 'id,userid');
+                        break;
+
                     case 'CURRENT_DATABASE':
                         return $this->data->id;
                         break;
+
                     case 'CURRENT_COURSE':
                         return $this->data->course;
                         break;
+
+                    case 'CURRENT_GROUPS':
+                        $groups = groups_get_activity_allowed_groups($this->cm);
+                        return array_keys($groups);
+                        break;
+
+                    case 'CURRENT_USERS':
+                        return $this->valid_userids();
+                        break;
+
+                    case 'CURRENT_STUDENTS':
+                        return array_intersect($this->valid_userids(),
+                                               $this->valid_studentids());
+                        break;
+
+                    case 'CURRENT_TEACHERS':
+                        return array_intersect($this->valid_userids(),
+                                               $this->valid_teacherids());
+                        break;
+
+                    case 'DEFAULT_NAME_FORMAT':
+                        $format = '';
+                        if (isset($CFG->fullnamedisplay)) {
+                            $format = $CFG->fullnamedisplay;
+                        }
+                        if (empty($format) || $format == 'language') {
+                            $format = get_string('fullnamedisplay');
+                        }
+                        return preg_replace('/\{\$a->(\w+)\}/', '$1', $format);
+                        break;
+
                     default:
                         return 'Unknown constant: '.$argument->value;
                 }
             }
-            return 'Unkonwn argument type: '.$argument->type;
+            return 'Unknown argument type: '.$argument->type;
         }
         if (is_string($argument)) {
             return $argument; // shouldn't happen !!
@@ -624,6 +666,35 @@ class data_field_report extends data_field_base {
         $groups = $this->compute($recordid, array_shift($arguments));
         return $this->valid_groupids($groups, $multiple);
     }
+
+    /**
+     * compute_get_group_users
+     * GET_GROUP_USERS(group, course)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    //protected function compute_get_group_users($recordid, $arguments, $multiple=true) {
+    //    $groups = $this->compute($recordid, array_shift($arguments));
+    //    $course = $this->compute($recordid, array_shift($arguments));
+    //    return $this->valid_group_userids($course, $groups, $multiple);
+    //}
+
+    /**
+     * compute_get_course_users
+     * GET_COURSE_USERS(course)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    //protected function compute_get_course_users($recordid, $arguments, $multiple=true) {
+    //    $course = $this->compute($recordid, array_shift($arguments));
+    //    return $this->valid_course_userids($course, $multiple);
+    //}
 
     /**
      * compute_user
@@ -880,7 +951,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_list
-     * LIST(type, list)
+     * LIST(items, listtype)
      *
      * @param integer $recordid
      * @param array $arguments
@@ -888,28 +959,27 @@ class data_field_report extends data_field_base {
      */
     protected function compute_list($recordid, $arguments) {
         $items = $this->compute($recordid, array_shift($arguments));
-        $type = $this->compute($recordid, array_shift($arguments));
-        return $this->format_list($items, $type);
+        $listtype = $this->compute($recordid, array_shift($arguments));
+        return $this->format_list($items, $listtype);
     }
 
     /**
      * format_list
-     * LIST(type, list)
      *
-     * @param integer $recordid
-     * @param array $arguments
+     * @param array $items
+     * @param string $listtype (UL, OL, DL)
      * @return integer
      */
-    protected function format_list($items, $type, $params=null) {
+    protected function format_list($items, $listtype, $params=null) {
         $list = '';
         if (is_array($items)) {
 
-            $type = strtolower($type);
+            $listtype = strtolower($listtype);
 
             // Use default list type, if necessary.
-            $types = array('ul', 'ol', 'dl');
-            if (! in_array($type, $types))  {
-                $type = reset($types);
+            $listtypes = array('ul', 'ol', 'dl');
+            if (! in_array($listtype, $listtypes))  {
+                $listtype = reset($listtypes);
             }
 
             // Set CSS class for the list.
@@ -925,7 +995,7 @@ class data_field_report extends data_field_base {
                 $params = array($name => $value);
             }
 
-            if ($type == 'dl') {
+            if ($listtype == 'dl') {
                 $count = 0;
                 foreach ($items as $id => $item) {
                     $count++;
@@ -941,7 +1011,7 @@ class data_field_report extends data_field_base {
             } else {
                 $items = array_filter($items);
                 if (count($items)) {
-                    $list = html_writer::alist($items, $params, $type);
+                    $list = html_writer::alist($items, $params, $listtype);
                 }
             }
         }
@@ -950,7 +1020,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_count_list
-     * COUNT_LIST(type, list)
+     * COUNT_LIST(list)
      *
      * @param integer $recordid
      * @param array $arguments
@@ -995,14 +1065,70 @@ class data_field_report extends data_field_base {
         $counts = array_values($counts);
 
         if ($addtotal) {
-            if ($total == 1) {
-                $strname = 'totalvote';
-            } else {
-                $strname = 'totalvotes';
-            }
-            $total = get_string($strname, 'datafield_report', $total);
+            $total = $this->format_votes($total);
+            $total = get_string('totalvotes', 'datafield_report', $total);
             $total = html_writer::span($total, 'border-top border-dark text-success');
             $counts[] = html_writer::span($total, 'totalvotes');
+        }
+
+        return $this->format_list($counts, 'ul', array('class' => 'list-unstyled'));
+    }
+
+    /**
+     * compute_score_list
+     * SCORE_LIST(field, records)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_score_list($recordid, $arguments, $addtotal=true) {
+
+        list($items, $scores) = $this->get_items_scores(
+            $recordid,
+            $this->compute($recordid, array_shift($arguments)),
+            $this->compute($recordid, array_shift($arguments))
+        );
+
+        if (empty($scores)) {
+            return '';
+        }
+
+        $counts = array();
+        foreach ($scores as $i) {
+            if (array_key_exists($i, $counts)) {
+                $counts[$i]++;
+            } else {
+                $counts[$i] = 1;
+            }
+        }
+
+        // Sort by descending value, and maintain keys
+        krsort($counts);
+
+        foreach ($counts as $i => $count) {
+            $a = (object)array(
+                'totalpoints' => $this->format_points($count * $i),
+                'numbervotes' => $this->format_votes($count),
+                'numberpoints' => $this->format_points($i)
+            );
+            $count = get_string('scorelistitem', 'datafield_report', $a);
+            $count = html_writer::span($count, 'text-muted');
+            $counts[$i] = html_writer::span($count.$items[$i], 'scorelistitem');
+        }
+
+        if ($addtotal) {
+            if ($count = count($scores)) {
+                $total = array_sum($scores);
+                $a = (object)array(
+                    'totalpoints' => $this->format_points($total),
+                    'countvotes' => $this->format_votes($count),
+                    'averagepoints' => $this->format_points(round($total / $count, 1))
+                );
+                $total = get_string('scorelisttotal', 'datafield_report', $a);
+                $total = html_writer::span($total, 'border-top border-dark text-success');
+                $counts[] = html_writer::span($total, 'scorelisttotal');
+            }
         }
 
         return $this->format_list($counts, 'ul', array('class' => 'list-unstyled'));
@@ -1017,7 +1143,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_avg($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return 0;
         }
@@ -1033,7 +1159,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_count($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return 0;
         }
@@ -1049,7 +1175,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_max($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return 0;
         }
@@ -1065,11 +1191,34 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_min($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return 0;
         }
         return min($items);
+    }
+
+    /**
+     * compute_sort
+     * SORT(list, sortdirection)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_sort($recordid, $arguments) {
+        $items = $this->compute($recordid, array_shift($arguments));
+        if (empty($items)) {
+            return array();
+        }
+        $sort = $this->compute($recordid, array_shift($arguments));
+        if ($sort && strtoupper($sort) == 'DESC') {
+            rsort($items);
+        } else {
+            // default is ascending order ("ASC")
+            sort($items);
+        }
+        return $items;
     }
 
     /**
@@ -1081,11 +1230,27 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_sum($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return 0;
         }
         return array_sum($items);
+    }
+
+    /**
+     * compute_unique
+     * UNIQUE(list)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_unique($recordid, $arguments) {
+        $items = $this->compute($recordid, array_shift($arguments));
+        if (empty($items)) {
+            return array();
+        }
+        return array_unique($items);
     }
 
     /**
@@ -1097,7 +1262,7 @@ class data_field_report extends data_field_base {
      * @return string
      */
     protected function compute_concat($recordid, $arguments) {
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return '';
         }
@@ -1114,7 +1279,7 @@ class data_field_report extends data_field_base {
      */
     protected function compute_join($recordid, $arguments) {
         $str = $this->compute($recordid, array_shift($arguments));
-        $items = $this->get_list_items($recordid, $arguments);
+        $items = $this->compute($recordid, array_shift($arguments));
         if (empty($items)) {
             return '';
         }
@@ -1131,7 +1296,7 @@ class data_field_report extends data_field_base {
      */
     protected function compute_merge($recordid, $arguments) {
         $merge = array();
-        while ($items = $this->get_list_items($recordid, $arguments)) {
+        while ($items = $this->compute($recordid, array_shift($arguments))) {
             if (empty($items)) {
                 continue;
             }
@@ -1142,29 +1307,6 @@ class data_field_report extends data_field_base {
             }
         }
         return $merge;
-    }
-
-    /**
-     * get_list_items
-     *
-     * @param integer $recordid
-     * @param array $argument
-     * @return integer
-     */
-    protected function get_list_items($recordid, $items) {
-        if (empty($items)) {
-            return array();
-        }
-        if (is_scalar($items)) {
-            return array($items);
-        }
-        if (is_array($items)) {
-            foreach ($items as $i => $item) {
-                $items[$i] = $this->compute($recordid, $item);
-            }
-            $items = array_filter($items);
-        }
-        return $items;
     }
 
     /**
@@ -1213,7 +1355,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_score_min($recordid, $arguments) {
-        return $this->score('max', $recordid, $arguments);
+        return $this->score('min', $recordid, $arguments);
     }
 
     /**
@@ -1228,7 +1370,68 @@ class data_field_report extends data_field_base {
         return $this->score('sum', $recordid, $arguments);
     }
 
-   /**
+    /**
+     * compute_menu
+     * MENU(list)
+     *
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_menu($recordid, $arguments) {
+        global $DB;
+        $output = '';
+        if ($items = $this->compute($recordid, array_shift($arguments))) {
+
+            $fieldid = $this->field->id;
+            $formfieldname = 'field_'.$fieldid;
+
+            if ($recordid) {
+                $params = array('fieldid' => $fieldid,
+                                'recordid' => $recordid);
+                $value = $DB->get_field('data_content', 'content', $params);
+            } else {
+                $value = '';
+            }
+
+            if (is_scalar($items)) {
+                $items = explode(',', $items);
+                $items = array_filter($items);
+            }
+            if (count($items) > 1) {
+                // Add <label> for accessibility.
+                $output .= $this->accessibility_label();
+
+                // Add main <select> element.
+                $choose = array('' => get_string('menuchoose', 'data'));
+                $params = array('id' => $formfieldname,
+                                'class' => 'mod-data-input custom-select');
+                $output .= html_writer::select($items, $formfieldname, $value, $choose, $params);
+            } else {
+                // Only one value, so use hidden <input> element.
+                $items = implode('', $items);
+                $params = array('type' => 'hidden',
+                                'name' => $formfieldname,
+                                'value' => $items);
+                $output = html_writer::empty_tag('input', $formfieldname, $params).$items;
+            }
+        }
+        return $output;
+    }
+
+    /**
+     * format the accessibility label for this field.
+     */
+    protected function accessibility_label() {
+        global $OUTPUT;
+        $label = html_writer::span($this->field->name, 'accesshide');
+        if ($this->field->required) {
+            $icon = $OUTPUT->pix_icon('req', get_string('requiredelement', 'form'));
+            $label .= html_writer::div($icon, 'inline-req');
+        }
+        return html_writer::tag('label', $label, array('for' => 'field_'.$this->field->id));
+    }
+
+    /**
      * compute_score
      * SCORE_LIST(field, records)
      *
@@ -1237,16 +1440,65 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function score($scoretype, $recordid, $arguments) {
-        global $DB;
 
-        $field = $this->compute($recordid, array_shift($arguments));
-        if (empty($field)) {
+        list($items, $scores) = $this->get_items_scores(
+            $recordid,
+            $this->compute($recordid, array_shift($arguments)),
+            $this->compute($recordid, array_shift($arguments))
+        );
+
+        if (empty($scores)) {
             return '';
         }
 
-        $records = $this->compute($recordid, array_shift($arguments));
+        $count = count($scores);
+        $countvalues = $this->format_values($count);
+
+        switch ($scoretype) {
+            case 'sum':
+                $text = get_string('sumofvalues', 'datafield_report', $countvalues);
+                $scores = array_sum($scores).html_writer::span($text, 'text-muted');
+                break;
+
+            case 'avg':
+                $total = array_sum($scores);
+                $text = get_string('averageofvalues', 'datafield_report', $countvalues);
+                $scores = round($total/$count, 1).html_writer::span($text, 'text-muted');
+                break;
+
+            case 'min':
+                $text = get_string('minimumofvalues', 'datafield_report', $countvalues);
+                $scores = min($scores).html_writer::span($text, 'text-muted');
+                break;
+
+            case 'max':
+                $text = get_string('maximumofvalues', 'datafield_report', $countvalues);
+                $scores = max($scores).html_writer::span($text, 'text-muted');
+                break;
+
+            default:
+                $scores = $scoretype.get_string('labelsep', 'langconfig').implode(', ', $scores);
+        }
+        return html_writer::span($scores, 'score'); 
+    }
+
+    /**
+     * get_items_scores
+     * 
+     * @param integer $recordid
+     * @param mixed $field
+     * @param mixed $arguments
+     * @return array(score array, values array)
+     */
+    protected function get_items_scores($recordid, $field, $records) {
+        global $DB;
+
+        if (empty($field)) {
+            return array(array(), array());
+        }
+
         if (empty($records)) {
-            return '';
+            return array(array(), array());
         }
 
         $dataid = $this->valid_dataid_from_recordids($records);
@@ -1256,94 +1508,73 @@ class data_field_report extends data_field_base {
         $select = "fieldid = ? AND recordid $select";
         array_unshift($params, $fieldid);
 
-        $score = array();
-        if ($scores = $DB->get_field('data_fields', 'param1', array('id' => $fieldid))) {
-            $scores = explode("\n", $scores);
-            $scores = array_map('trim', $scores);
-            $scores = array_filter($scores);
-            $scores = array_unique($scores);
-            $scores[] = '';
-            $scores = array_reverse($scores);
+        if ($items = $DB->get_field('data_fields', 'param1', array('id' => $fieldid))) {
+            $items = explode("\n", $items);
+            $items = array_map('trim', $items);
+            $items = array_filter($items);
+            $items = array_unique($items);
+            $items[] = '';
+            $items = array_reverse($items);
+        } else {
+            $items = array();
+        }
 
-            if ($values = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
-                $values = array_map('trim', $values);
-                $values = array_filter($values);
-                foreach ($values as $value) {
-                    if (in_array($value, $scores)) {
-                        $score[] = array_search($value, $scores);
-                    }
+        $scores = array();
+        if ($contents = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
+            $contents = array_map('trim', $contents);
+            $contents = array_filter($contents);
+            foreach ($contents as $content) {
+                if (in_array($content, $items)) {
+                    $scores[] = array_search($content, $items);
                 }
             }
         }
-        if (empty($score)) {
-            return '';
-        }
-        $count = count($score);
-        switch ($scoretype) {
-            case 'sum':
-                $text = get_string('sumofvalues', 'datafield_report', $count);
-                $score = array_sum($score).html_writer::span($text, 'text-muted');
-                break;
 
-            case 'avg':
-                $total = array_sum($score);
-                $text = get_string('averageofvalues', 'datafield_report', $count);
-                $score = round($total/$count, 1).html_writer::span($text, 'text-muted');
-                break;
-
-            case 'min':
-                $text = get_string('minimumofvalues', 'datafield_report', $count);
-                $score = min($score).html_writer::span($text, 'text-muted');
-                break;
-
-            case 'max':
-                $text = get_string('maximumofvalues', 'datafield_report', $count);
-                $score = max($score).html_writer::span($text, 'text-muted');
-                break;
-
-            default:
-                $score = $scoretype.get_string('labelsep', 'langconfig').implode(', ', $score);
-        }
-        return html_writer::span($score, 'score'); 
+        return array($items, $scores);
     }
 
     /**
-     * get_sql_like
+     * format_points
      *
-     * @param string $text
+     * @param integer number of $points
      * @return string
      */
-    protected function get_sql_like($name, $text) {
-        global $DB;
+    protected function format_points($points) {
+        return $this->format_plural('point', $points);
+    }
 
-        $first = substr($text, 0, 1);
-        $last = substr($text, -1);
+    /**
+     * format_values
+     *
+     * @param integer number of $values
+     * @return string
+     */
+    protected function format_values($values) {
+        return $this->format_plural('value', $values);
+    }
 
-        // Regular Expression syntax ^...$
-        if ($first == '^' && $last == '$') {
-            $text = substr($text, 1, -1);
-        } else if ($first == '^') {
-            $text = substr($text, 1).'%';
-        } else if ($last == '$') {
-            $text = '%'.substr($text, 0, -1);
-        }
+    /**
+     * format_votes
+     *
+     * @param integer number of $votes
+     * @return string
+     */
+    protected function format_votes($votes) {
+        return $this->format_plural('vote', $votes);
+    }
 
-        // Simple pattern syntax where * means "zero or more chars"
-        if ($first == '*') {
-            $text = '%'.substr($text, 1);
-        }
-        if ($last == '*') {
-            $text = substr($text, 0, -1).'%';
-        }
-        $text = str_replace('*', '%', $text);
-
-        if (strpos($text, '%') === false) {
-            $select = "$name = ?";
+    /**
+     * format_plural
+     *
+     * @param integer number of $votes
+     * @return string
+     */
+    protected function format_plural($type, $number) {
+        if ($number == 1) {
+            return get_string("one{$type}", 'datafield_report');
         } else {
-            $text = preg_replace('/%%+/', '%', $text);
-            $select = $DB->sql_like($name, '?');
+            return get_string("many{$type}s", 'datafield_report', $number);
         }
-        return array($select, array($text));
     }
 
     /**
@@ -1353,7 +1584,7 @@ class data_field_report extends data_field_base {
      * @param integer $dataid
      * @return string
      */
-    protected function valid_dataid($database) {
+    protected function valid_dataid($database='') {
         global $DB;
         static $dataids = array();
 
@@ -1361,6 +1592,11 @@ class data_field_report extends data_field_base {
 
             $cm = null;
             switch (true) {
+
+                case empty($database):
+                    $cm = $this->cm;
+                    break;
+
                 case preg_match('/^[0-9]+$/', $database):
                     $cm = get_coursemodule_from_instance('data', $database);
                     break;
@@ -1515,7 +1751,7 @@ class data_field_report extends data_field_base {
         }
     }
 
-    protected function valid_userids($database, $users) {
+    protected function valid_userids($database='', $users=null) {
         global $DB, $USER;
         static $userids = array();
 
@@ -1553,17 +1789,55 @@ class data_field_report extends data_field_base {
                     $userids[$dataid] = get_enrolled_users($context);
                     $userids[$dataid] = array_keys($userids[$dataid]);
                 } else {
-                    if ($groups = groups_get_all_groups($course->id, $USER->id, $course->defaultgroupingid)) {
+                    if ($groups = groups_get_activity_allowed_groups($this->cm)) {
                         list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
                         $userids[$dataid] = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'id', 'id,userid');
-                        $userids[$dataid] = array_unique($userids[$dataid]);
-                        $userids[$dataid] = array_values($userids[$dataid]);
+                        if ($userids[$dataid]) {
+                            $userids[$dataid] = array_unique($userids[$dataid]);
+                            $userids[$dataid] = array_values($userids[$dataid]);
+                        } else {
+                            $userids[$dataid] = array();
+                        }
                     }
                 }
+                sort($userids[$dataid]);
             }
         }
 
-        return $userids[$dataid];
+        if (empty($users)) {
+            return $userids[$dataid];
+        } else {
+            return array_intersect($userids[$dataid], $users);
+        }
+    }
+
+    /**
+     * get list of teachers (including non-editing teachers) in this course
+     */
+    protected function valid_studentids() {
+        if ($this->studentids === null) {
+            if ($this->studentids = get_users_by_capability($this->context, 'mod/data:viewentry', 'u.id,u.username')) {
+                $this->studentids = array_keys($this->studentids);
+                $this->studentids = array_diff($this->studentids, $this->valid_teacherids());
+            } else {
+                $this->studentids = array();
+            }
+        }
+        return $this->studentids;
+    }
+
+    /**
+     * get list of teachers (including non-editing teachers) in this course
+     */
+    protected function valid_teacherids() {
+        if ($this->teacherids === null) {
+            if ($this->teacherids = get_users_by_capability($this->context, 'mod/data:manageentries', 'u.id,u.username')) {
+                $this->teacherids = array_keys($this->teacherids);
+            } else {
+                $this->teacherids = array();
+            }
+        }
+        return $this->teacherids;
     }
 
     protected function valid_groupids($groups, $multiple) {
@@ -1571,20 +1845,26 @@ class data_field_report extends data_field_base {
         static $groupids = array();
 
         if (! array_key_exists($groups, $groupids)) {
-            $groupids[$groups] = array();
-
-            if (preg_match('/^[0-9]+$/', $groups)) {
-                $params = array('id' => $groups, 'course' => $this->data->course);
-                if ($records = $DB->get_records('groups', $params, 'id', 'id,course')) {
-                    $groupids[$groups] = array_keys($records);
+            $activitygroupids = groups_get_activity_allowed_groups($this->cm);
+            $activitygroupids = array_keys($activitygroupids);
+            if ($groups) {
+                $groupids[$groups] = array();
+                if (preg_match('/^[0-9]+$/', $groups)) {
+                    $params = array('id' => $groups, 'course' => $this->data->course);
+                    if ($records = $DB->get_records('groups', $params, 'id', 'id,course')) {
+                        $groupids[$groups] = array_keys($records);
+                    }
+                } else {
+                    list($select, $params) = $this->get_sql_like('name', $groups);
+                    $select = "course = ? AND $select";
+                    array_unshift($params, $this->data->course);
+                    if ($records = $DB->get_records_select('groups', $select, $params, 'id', 'id,course')) {
+                        $groupids[$groups] = array_keys($records);
+                    }
                 }
+                $groupids[$groups] = array_intersect($groupids[$groups], $activitygroupids);
             } else {
-                list($select, $params) = $this->get_sql_like('name', $groups);
-                $select = "course = ? AND $select";
-                array_unshift($params, $this->data->course);
-                if ($records = $DB->get_records_select('groups', $select, $params, 'id', 'id,course')) {
-                    $groupids[$groups] = array_keys($records);
-                }
+                $groupids[$groups] = $activitygroupids;
             }
         }
 
@@ -1595,51 +1875,43 @@ class data_field_report extends data_field_base {
         }
     }
 
-
     /**
-     * compute_menu
-     * MENU(list)
+     * get_sql_like
      *
-     * @param array $arguments
+     * @param string $text
      * @return string
      */
-    protected function compute_menu($recordid, $arguments) {
+    protected function get_sql_like($name, $text) {
         global $DB;
-        $output = '';
-        if ($list = $this->compute($recordid, array_shift($arguments))) {
 
-            $fieldid = $this->field->id;
-            $formfieldname = 'field_'.$fieldid;
+        $first = substr($text, 0, 1);
+        $last = substr($text, -1);
 
-            if ($recordid) {
-                $params = array('fieldid' => $fieldid,
-                                'recordid' => $recordid);
-                $value = $DB->get_field('data_content', 'content', $params);
-            } else {
-                $value = '';
-            }
-
-            if (is_scalar($list)) {
-                $list = explode(',', $list);
-                $list = array_filter($list);
-            }
-            if (count($list) > 1) {
-                // Add <label> for accessibility.
-                $output .= $this->accessibility_label();
-
-                // Add main <select> element.
-                $choose = array('' => get_string('menuchoose', 'data'));
-                $params = array('id' => $formfieldname,
-                                'class' => 'mod-data-input custom-select');
-                $output .= html_writer::select($list, $formfieldname, $value, $choose, $params);
-                //$output .= html_writer::select($list, $formfieldname, $value);
-            } else {
-                $list = implode('', $list);
-                $params = array('type' => 'hidden', 'value' => $list);
-                $output = html_writer::empty_tag('input', $formfieldname, $params).$list;
-            }
+        // Regular Expression syntax ^...$
+        if ($first == '^' && $last == '$') {
+            $text = substr($text, 1, -1);
+        } else if ($first == '^') {
+            $text = substr($text, 1).'%';
+        } else if ($last == '$') {
+            $text = '%'.substr($text, 0, -1);
         }
-        return $output;
+
+        // Simple pattern syntax where * means "zero or more chars"
+        if ($first == '*') {
+            $text = '%'.substr($text, 1);
+        }
+        if ($last == '*') {
+            $text = substr($text, 0, -1).'%';
+        }
+        $text = str_replace('*', '%', $text);
+
+        if (strpos($text, '%') === false) {
+            $select = "$name = ?";
+        } else {
+            $text = preg_replace('/%%+/', '%', $text);
+            $select = $DB->sql_like($name, '?');
+        }
+        return array($select, array($text));
     }
 
     /**
@@ -1698,102 +1970,5 @@ class data_field_report extends data_field_base {
             }
         }
         return $output;
-    }
-
-    /**
-     * get list of teachers (including non-editing teachers) in this course
-     */
-    protected function get_teachers() {
-        if ($this->teachers === null) {
-            $this->teachers = get_users_by_capability($this->context, 'mod/data:manageentries', 'u.id,u.username');
-        }
-        return $this->teachers;
-    }
-
-    /**
-     * compute_fieldvalue
-     *
-     * @param array $arguments[fieldname, db_identifier]
-     * @return string
-     */
-    protected function compute_fieldvalue($recordid, $arguments) {
-        global $DB, $USER;
-
-        $cm = null;
-        $data = null;
-        $userids = null;
-
-        if (is_array($arguments)) {
-            if ($fieldname = array_shift($arguments)) {
-                $fieldname = $fieldname->value;
-            }
-            if ($cm = array_shift($arguments)) {
-                if ($cm = $cm->value) {
-                    switch (true) {
-                        case substr($cm, 0, 5) == 'cmid=':
-                            $cm = get_coursemodule_from_id('data', (int)substr($cm, 5));
-                            break;
-                        case substr($cm, 0, 2) == 'd=':
-                            $cm = get_coursemodule_from_instance('data', (int)substr($cm, 2));
-                            break;
-                        default:
-                            $params = array('course' => $this->data_course,
-                                            'name' => $cm);
-                            if ($data = $DB->get_records('data', $params, 'id')) {
-                                $data = array_shift($data); // the oldest matching db
-                                $cm = get_coursemodule_from_instance('data', $data->id);
-                            } else {
-                                $cm = '';
-                            }
-                    }
-                    if ($cm && \core_availability\info_module::is_user_visible($cm)) {
-                        // user has acces to the specified database on this site.
-                    } else {
-                        $cm = '';
-                    }
-                }
-            } else {
-                $cm = $this->cm;
-                $data = $this->data;
-            }
-            if ($userids = array_shift($arguments)) {
-                $userids = $this->compute($recordid, $userids);
-                $userids = explode($userids);
-                $userids = array_filter($userids);
-            } else  {
-                $userids = array($USER->id);
-            }
-
-            if ($cm && $fieldname && $userids && count($userids)) {
-                if (empty($data)) {
-                    $data = $DB->get_record('data', array('id' => $cm->instance));
-                }
-                if ($field = data_get_field_from_name($fieldname, $data)) {
-                    list($select, $params) = $DB->get_in_or_equal($userids);
-                    array_unshift($params, $data->id);
-                    if ($records = $DB->get_records_select('data_records', "dataid = ? AND userid $select", $params, 'userid,id', 'id,userid')) {
-                        $output = array();
-                        foreach ($records as $record) {
-                            $output[] = $record->id.': '.$field->display_browse_field($record->id, 'singletemplate');
-                        }
-                        return implode(',', $output);
-                    }
-                }
-            }
-        }
-        return '';
-    }
-
-    /**
-     * format the accessibility label for this field.
-     */
-    protected function accessibility_label() {
-        global $OUTPUT;
-        $label = html_writer::span($this->field->name, 'accesshide');
-        if ($this->field->required) {
-            $icon = $OUTPUT->pix_icon('req', get_string('requiredelement', 'form'));
-            $label .= html_writer::div($icon, 'inline-req');
-        }
-        return html_writer::tag('label', $label, array('for' => 'field_'.$this->field->id));
     }
 }

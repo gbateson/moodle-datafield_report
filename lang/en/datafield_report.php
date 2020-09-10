@@ -29,7 +29,7 @@
 $string['pluginname'] = 'Report';
 
 /** more strings */
-$string['averageofvalues'] = ' [the average of {$a} values]';
+$string['averageofvalues'] = ' [the average of {$a}]';
 $string['countvote'] = '[{$a} vote] ';
 $string['countvotes'] = '[{$a} votes] ';
 $string['extraformat_help'] = 'An additional format for this field that may be useful in AJAX.
@@ -61,20 +61,26 @@ You can then initiate the AJAX call using the TMP.ajax object, thus:
         // do something with responsetext
     });
 ';
+$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
+$string['errorfunctionusers'] = 'a format string, and a list of user ids.';
+$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
 $string['extraformat1_help'] = $string['extraformat_help'];
 $string['extraformat1'] = 'Extra format (1)';
 $string['extraformat2_help'] = $string['extraformat_help'];
 $string['extraformat2'] = 'Extra format (2)';
 $string['extraformat3_help'] = $string['extraformat_help'];
 $string['extraformat3'] = 'Extra format (3)';
-$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
-$string['errorfunctionusers'] = 'a format string, and a list of user ids.';
-$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
 $string['fieldtypelabel'] = 'Report field';
 $string['inputformat_help'] = 'The format of this field on the "Add entry" and "Advanced search" templates.';
 $string['inputformat'] = 'Input format';
-$string['maximumofvalues'] = ' [the maximum of {$a} values]';
-$string['minimumofvalues'] = ' [the minimum of {$a} values]';
+$string['manypoints'] = '{$a} points';
+$string['manyvalues'] = '{$a} values';
+$string['manyvotes'] = '{$a} votes';
+$string['maximumofvalues'] = ' [the maximum of {$a}]';
+$string['minimumofvalues'] = ' [the minimum of {$a}]';
+$string['onepoint'] = '1 point';
+$string['onevalue'] = '1 value';
+$string['onevote'] = '1 vote';
 $string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
 $string['outputformat'] = 'Output format';
 $string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the {$a->fieldname} field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
@@ -101,11 +107,17 @@ $string['reportfieldfunctions'] = '
 :   the id of the current course
 
 *   CURRENT_USERS
-:   an array of userids that the current user can interact with in the current course
+:   an array of userids of student sand teachers that the current user can interact with in the current course
 :   If the database activity is using separate groups, this list contains only the users in groups to which the current user belongs.
 
+*   CURRENT_STUDENTS
+:   an array of userids of students that the current user can interact with in the current course
+
+*   CURRENT_TEACHERS
+:   an array of userids of teachers that the current user can interact with in the current course
+
 *   CURRENT_GROUPS
-:   an array of groupids that the current user belongs to
+:   an array of groupids that the current user belongs to in the current course
 
 *   DEFAULT_NAME_FORMAT
 :   the default name format for the current language
@@ -190,11 +202,11 @@ $string['reportfieldfunctions'] = '
 *   LIST(values, listtype)
 :   return the values formatted as an HTML list depending on the listtype ("UL", "OL" or "DL")
 
-*   SORT(values)
-:   return a sorted list of values
-
-*   COUNT_LIST(values)
+*   COUNT_LIST(field, records)
 :   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values.
+
+*   SCORE_LIST(field, records)
+:   return an HTML list in which each value is preceded by information on how many times that value occurs, the number of points awarded for each occurence of the value, and the total number of points awarded. Under the list appears information about the total number of points awarded, the total number of occurences, and the average number of points awarded per occurrence. 
 
 #### Functions to reduce an array to a single item
 
@@ -210,8 +222,14 @@ $string['reportfieldfunctions'] = '
 *   MIN(values)
 :   return the minimum value
 
+*   SORT(values, sortdirection)
+:   return a sorted list in ascending (sortdirection=ASC) or descending (sortdirection=DESC) order
+
 *   SUM(values)
 :   return the sum of the values
+
+*   UNIQUE(values)
+:   return a sorted list in ascending (sortdirection=ASC) or descending (sortdirection=DESC) order
 
 *   CONCAT(value1, value2, ...)
 :   return a long string produced by concatenating the values together
@@ -271,6 +289,7 @@ $string['reportfieldfunctions'] = '
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 ';
-$string['sumofvalues'] = ' [the sum of {$a} values]';
-$string['totalvote'] = '[{$a} vote in total]';
-$string['totalvotes'] = '[{$a} votes in total]';
+$string['scorelistitem'] = '[{$a->numberpoints} x {$a->numbervotes} = {$a->totalpoints}] ';
+$string['scorelisttotal'] = '{$a->totalpoints} from {$a->countvotes} (average of {$a->averagepoints} per vote)';
+$string['sumofvalues'] = ' [the sum of {$a}]';
+$string['totalvotes'] = '[{$a} in total]';
