@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2020-09-15 (28)
+ - add more efficient mechanism for defining default values when computing values for arguments
+
 2020-09-10 (26)
  - fix calcualtions of CURRENT_GROUPS/USER/STUDENTS/TEACHERS
 

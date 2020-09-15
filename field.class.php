@@ -361,10 +361,18 @@ class data_field_report extends data_field_base {
      * compute
      *
      * @param object $argument
+     * @param mixed $default (optional, default = null)
      * @return mixed computer value of $argument
      */
-    protected function compute($recordid, $argument) {
+    protected function compute($recordid, $argument, $default=null) {
         global $CFG, $DB, $USER;
+        if ($argument === null && is_string($default)) {
+            $argument = (object)array('type' => 'constant',
+                                      'value' => $default);
+        }
+        if ($argument === null || is_string($argument)) {
+            return $argument;
+        }
         if (is_object($argument) && property_exists($argument, 'type')) {
             if ($argument->type == 'function') {
                 if (property_exists($argument, 'name') == false || preg_match('/^\w+$/', $argument->name) == false) {
@@ -374,13 +382,13 @@ class data_field_report extends data_field_base {
                     return "Oops, arguments are missing for function $argument->name";
                 }
                 $method = 'compute_'.strtolower($argument->name);
-                if (method_exists($this, $method) == false) {
+                if (method_exists($this, $method)) {
+                    return $this->$method($recordid, $argument->arguments);
+                } else {
                     return get_string('errorunknownfunction', 'datafield_report', $argument->name);
                 }
-                return $this->$method($recordid, $argument->arguments);
             }
-            if ($argument->type == 'string' ||
-                $argument->type == 'integer') {
+            if ($argument->type == 'string' || $argument->type == 'integer') {
                 return $argument->value;
             }
             if ($argument->type == 'constant') {
@@ -451,10 +459,7 @@ class data_field_report extends data_field_base {
             }
             return 'Unknown argument type: '.$argument->type;
         }
-        if (is_string($argument)) {
-            return $argument; // shouldn't happen !!
-        }
-        return '';
+        return null;
     }
 
     /**
@@ -472,11 +477,10 @@ class data_field_report extends data_field_base {
      * @return integer a single dataid
      */
     protected function compute_get_database($recordid, $arguments) {
-        if (empty($arguments)) {
-            return $this->data->id; // id of current database
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            return $this->valid_dataid($database);
         }
-        $database = $this->compute($recordid, array_shift($arguments));
-        return $this->valid_dataid($database);
+        return null;
     }
 
     /**
@@ -493,21 +497,12 @@ class data_field_report extends data_field_base {
      * @return string
      */
     protected function compute_get_field($recordid, $arguments) {
-        if (empty($arguments)) {
-            return null; // shouldn't happen
+        if ($field = $this->compute($recordid, array_shift($arguments))) {
+            if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+                return $this->valid_fieldid($database, $field);
+            }
         }
-
-        $field = $this->compute($recordid, array_shift($arguments));
-        if (empty($field)) {
-            return null; // shouldn't happen
-        }
-
-        $database = $this->compute($recordid, array_shift($arguments));
-        if (empty($database)) {
-            $database = $this->data->id;
-        }
-
-        return $this->valid_fieldid($database, $field);
+        return null;
     }
 
     /**
@@ -531,19 +526,13 @@ class data_field_report extends data_field_base {
      * @return array
      */
     protected function compute_get_records($recordid, $arguments, $multiple=true) {
-
-        $database = $this->compute($recordid, array_shift($arguments));
-        if (empty($database)) {
-            $database = $this->data->id;
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            if ($field = $this->compute($recordid, array_shift($arguments))) {
+                $value = $this->compute($recordid, array_shift($arguments));
+                return $this->valid_recordids($database, $field, $value, $multiple);
+            }
         }
-
-        $field = $this->compute($recordid, array_shift($arguments));
-        if (empty($field)) {
-            return '';
-        }
-
-        $value = $this->compute($recordid, array_shift($arguments));
-        return $this->valid_recordids($database, $field, $value, $multiple);
+        return null;
     }
 
     /**
@@ -555,7 +544,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_get_user_record($recordid, $arguments) {
-        return $this->compute_get_user_records($recordid, $arguments, false);
+        return $this->compute_get_user_records($recordid, $arguments, 'CURRENT_USER', false);
     }
 
     /**
@@ -566,22 +555,17 @@ class data_field_report extends data_field_base {
      * @param integer $recordid
      * @return array
      */
-    protected function compute_get_user_records($recordid, $arguments, $multiple=true) {
+    protected function compute_get_user_records($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
         global $DB, $USER;
-
-        $database = $this->compute($recordid, array_shift($arguments));
-        if (empty($database)) {
-            $database = $this->data->id;
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            if ($users = $this->compute($recordid, array_shift($arguments), $default)) {
+                if (is_scalar($users)) {
+                    $users = array($users);
+                }
+                return $this->valid_user_recordids($database, $users, $multiple);
+            }
         }
-
-        $users = $this->compute($recordid, array_shift($arguments));
-        if (empty($users)) {
-            $users = array($USER->id);
-        } if (is_scalar($users)) {
-            $users = array($users);
-        }
-
-        return $this->valid_user_recordids($database, $users, $multiple);
+        return null;
     }
 
     /**
@@ -593,7 +577,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_get_value($recordid, $arguments) {
-        return $this->compute_get_values($recordid, $arguments, false);
+        return $this->compute_get_values($recordid, $arguments, 'CURRENT_RECORD', false);
     }
 
     /**
@@ -605,31 +589,26 @@ class data_field_report extends data_field_base {
      * @param boolean $multiple
      * @return integer
      */
-    protected function compute_get_values($recordid, $arguments, $multiple=true) {
+    protected function compute_get_values($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
         global $DB;
 
-        $field = $this->compute($recordid, array_shift($arguments));
-        if (empty($field)) {
-            return '';
-        }
+        if ($field = $this->compute($recordid, array_shift($arguments))) {
+            if ($records = $this->compute($recordid, array_shift($arguments), $default)) {
 
-        $records = $this->compute($recordid, array_shift($arguments));
-        if (empty($records)) {
-            return '';
-        }
+                $dataid = $this->valid_dataid_from_recordids($records);
+                $fieldid = $this->valid_fieldid($dataid, $field);
 
-        $dataid = $this->valid_dataid_from_recordids($records);
-        $fieldid = $this->valid_fieldid($dataid, $field);
+                list($select, $params) = $DB->get_in_or_equal($records);
+                $select = "fieldid = ? AND recordid $select";
+                array_unshift($params, $fieldid);
 
-        list($select, $params) = $DB->get_in_or_equal($records);
-        $select = "fieldid = ? AND recordid $select";
-        array_unshift($params, $fieldid);
-
-        if ($values = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
-            if ($multiple) {
-                return $values;
-            } else {
-                return reset($values);
+                if ($values = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
+                    if ($multiple) {
+                        return $values;
+                    } else {
+                        return reset($values);
+                    }
+                }
             }
         }
 
@@ -637,7 +616,7 @@ class data_field_report extends data_field_base {
         if ($multiple) {
             return array();
         } else {
-            return '';
+            return null;
         }
     }
 
@@ -650,21 +629,25 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_get_group($recordid, $arguments) {
-        return $this->compute_get_groups($recordid, $arguments, false);
+        return $this->compute_get_groups($recordid, $arguments, 'CURRENT_GROUP', false);
     }
 
     /**
      * compute_get_groups
-     * GET_GROUPS(groups)
+     * GET_GROUPS(groups, course)
      *
      * @param array $arguments
      * @param integer $recordid
      * @param boolean $multiple
      * @return integer
      */
-    protected function compute_get_groups($recordid, $arguments, $multiple=true) {
-        $groups = $this->compute($recordid, array_shift($arguments));
-        return $this->valid_groupids($groups, $multiple);
+    protected function compute_get_groups($recordid, $arguments, $default='CURRENT_GROUPS', $multiple=true) {
+        if ($groups = $this->compute($recordid, array_shift($arguments), $default)) {
+            if ($course = $this->compute($recordid, array_shift($arguments), 'CURRENT_COURSE')) {
+                return $this->valid_groupids($groups, $course, $multiple);
+            }
+        }
+        return null;
     }
 
     /**
@@ -704,7 +687,7 @@ class data_field_report extends data_field_base {
      * @return string
      */
     protected function compute_user($recordid, $arguments) {
-        return $this->compute_users($recordid, $arguments, false);
+        return $this->compute_users($recordid, $arguments, 'CURRENT_USER', false);
     }
 
     /**
@@ -714,16 +697,16 @@ class data_field_report extends data_field_base {
      * @param array $arguments
      * @return string
      */
-    protected function compute_users($recordid, $arguments, $multiple=true) {
+    protected function compute_users($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
         global $DB;
         $output = '';
 
-        $format = $this->compute($recordid, array_shift($arguments));
+        $format = $this->compute($recordid, array_shift($arguments), 'DEFAULT_NAME_FORMAT');
         if ($format == '') {
             $format = 'default';
         }
 
-        if ($userids = $this->compute($recordid, array_shift($arguments))) {
+        if ($userids = $this->compute($recordid, array_shift($arguments), $default)) {
             if ($multiple) {
                 if (is_scalar($userids)) {
                     $userids = array($userids);
@@ -759,8 +742,8 @@ class data_field_report extends data_field_base {
      */
     protected function format_user_name($format, $user) {
         static $search = '/firstnamephonetic|lastnamephonetic|'.
-                         'firstname|middlename|lastname|'.
-                         'alternatename/i';
+                          'firstname|middlename|lastname|'.
+                          'alternatename/i';
 
         if ($format == 'default') {
             return fullname($user);
@@ -817,22 +800,22 @@ class data_field_report extends data_field_base {
 
         $field = $this->compute($recordid, array_shift($arguments));
         if (empty($field)) {
-            return '';
+            return null;
         }
 
         $records = $this->compute($recordid, array_shift($arguments));
         if (empty($records)) {
-            return '';
+            return null;
         }
 
         $dataid = $this->valid_dataid_from_recordids($records);
         if (empty($dataid)) {
-            return '';
+            return null;
         }
 
         $fieldid = $this->valid_fieldid($dataid, $field);
         if (empty($fieldid)) {
-            return '';
+            return null;
         }
         $fieldtype = $DB->get_field('data_fields', 'type', array('id' => $fieldid));
 
@@ -869,7 +852,7 @@ class data_field_report extends data_field_base {
         if ($multiple) {
             return array();
         } else {
-            return '';
+            return null;
         }
     }
 
@@ -886,7 +869,7 @@ class data_field_report extends data_field_base {
             $params = array('href' => $url);
             return html_writer::tag('a', $url, $params);
         }
-        return ''; // shouldn't happen !!
+        return null; // shouldn't happen !!
     }
 
     /**
@@ -902,7 +885,7 @@ class data_field_report extends data_field_base {
             $params = array('src' => $url);
             return html_writer::empty_tag('img', $params);
         }
-        return ''; // shouldn't happen !!
+        return null; // shouldn't happen !!
     }
 
     /**
@@ -920,7 +903,7 @@ class data_field_report extends data_field_base {
                             'preload' => 'metadata');
             return html_writer::tag('audio', '', $params);
         }
-        return ''; // shouldn't happen !!
+        return null; // shouldn't happen !!
     }
 
     /**
@@ -939,7 +922,7 @@ class data_field_report extends data_field_base {
                             'playsinline' => 'true');
             return html_writer::tag('video', '', $params);
         }
-        return ''; // shouldn't happen !!
+        return null; // shouldn't happen !!
     }
 
     /**
@@ -951,9 +934,11 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_list($recordid, $arguments) {
-        $items = $this->compute($recordid, array_shift($arguments));
-        $listtype = $this->compute($recordid, array_shift($arguments));
-        return $this->format_list($items, $listtype);
+        if ($items = $this->compute($recordid, array_shift($arguments))) {
+            $listtype = $this->compute($recordid, array_shift($arguments));
+            return $this->format_list($items, $listtype);
+        }
+        return null; // shouldn't happen !!
     }
 
     /**
@@ -1833,7 +1818,7 @@ class data_field_report extends data_field_base {
         return $this->teacherids;
     }
 
-    protected function valid_groupids($groups, $multiple) {
+    protected function valid_groupids($groups, $course, $multiple) {
         global $DB;
         static $groupids = array();
 
