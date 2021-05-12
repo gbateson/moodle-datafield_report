@@ -423,6 +423,12 @@ class data_field_report extends data_field_base {
                         return $this->data->course;
                         break;
 
+                    case 'CURRENT_GROUP':
+                        if ($group = groups_get_activity_group($this->cm)) {
+                            return $group;
+                        }
+                        // deliberate drop through to CURRENT_GROUPS
+
                     case 'CURRENT_GROUPS':
                         $groups = groups_get_activity_allowed_groups($this->cm);
                         return array_keys($groups);
@@ -569,6 +575,95 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * compute_get_active_users
+     * GET_USER_RECORDS(database, groups, countfield, menulength)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return array
+     */
+    protected function compute_get_active_users($recordid, $arguments, $default='CURRENT_GROUP', $multiple=true) {
+        global $DB, $USER;
+        // get the target database (typically, this is NOT the current database)
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            $dataid = $this->valid_dataid($database);
+            if ($groups = $this->compute($recordid, array_shift($arguments), $default)) {
+                if (is_scalar($groups)) {
+                    $groups = array($groups);
+                }
+            }
+            if (empty($groups)) {
+                $select = 'dataid = ?';
+                $params = array($dataid);
+            } else {
+                list($select, $params) = $DB->get_in_or_equal($groups);
+                if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'id', 'id,userid')) {
+                    list($select, $params) = $DB->get_in_or_equal($userids);
+                    $select = "dataid = ? AND userid $select";
+                    array_unshift($params, $dataid);
+                } else {
+                    // no members in the requested groups
+                    $select = 'userid < ?';
+                    $params = array(0);
+                }
+            }
+
+            $dataid = $this->data->id; // current database
+            if ($userids = $DB->get_records_select_menu('data_records', $select, $params, 'id', 'id,userid')) {
+                $userids = $this->valid_userids($dataid, array_unique($userids));
+
+                // $countfield is database field that holds the userid to which this record relates.
+                // Note: this is different from the "userid" field in the "data_records" table.
+                $countfield = $this->compute($recordid, array_shift($arguments), '');
+                if ($countfield = $this->valid_fieldid($dataid, $countfield)) {
+
+                    // $countremaining is the remaining number of items to be added to the menu
+                    $countremaining = $this->compute($recordid, array_shift($arguments), 10);
+                    $countremaining = intval($countremaining);
+
+                    list($where, $params) = $DB->get_in_or_equal($userids);
+                    $where  = "dc.fieldid = ? AND dc.content $where";
+                    array_unshift($params, $countfield);
+
+                    $select = 'dc.content AS contentvalue, COUNT(*) AS contentcount';
+                    $from   = '{data_content} dc LEFT JOIN {data_records} dr ON dc.recordid = dr.id';
+                    $group  = 'dc.content';
+                    if ($ids = $DB->get_records_sql_menu("SELECT $select FROM $from WHERE $where GROUP BY $group", $params)) {
+
+                        $userids = array(0 => array_fill_keys($userids, 0));
+                        foreach ($ids as $id => $count) {
+                            unset($userids[0][$id]);
+                            $userids[$count][$id] = $count;
+                        }
+                        ksort($userids);
+
+                        $menu = array();
+                        foreach ($userids as $ids) {
+                            if ($countremaining) {
+                                $count = count($ids);
+                                if ($countremaining >= $count) {
+                                    // add all ids
+                                    $ids = array_keys($ids);
+                                    $countremaining -= $count;
+                                } else {
+                                    // add only a random subset of ids
+                                    $ids = array_rand($ids, $countremaining);
+                                    $countremaining = 0; // force end of loop
+                                }
+                                shuffle($ids);
+                                $menu += $ids;
+                            }
+                        }
+                        $userids = $menu;
+                    }
+                }
+                return $userids;
+            }
+        }
+        return null;
+    }
+
+    /**
      * compute_get_record
      * GET_VALUE(field, record)
      *
@@ -692,7 +787,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_users
-     * USERS(format, users)
+     * USERS(format, userids)
      *
      * @param array $arguments
      * @return string
@@ -1390,7 +1485,7 @@ class data_field_report extends data_field_base {
                 $params = array('type' => 'hidden',
                                 'name' => $formfieldname,
                                 'value' => $items);
-                $output = html_writer::empty_tag('input', $formfieldname, $params).$items;
+                $output = html_writer::empty_tag('input', $params).$items;
             }
         }
         return $output;
@@ -1729,14 +1824,18 @@ class data_field_report extends data_field_base {
         }
     }
 
-    protected function valid_userids($database='', $users=null) {
+    /**
+     * Return all ids of all users who the current user has access to within the specified database.
+     * In addition, if $users is specified, it will be used to filter the list of returned userids.
+     */
+    protected function valid_userids($database='', $userids=null) {
         global $DB, $USER;
-        static $userids = array();
+        static $staticuserids = array();
 
         $dataid = $this->valid_dataid($database);
 
-        if (! array_key_exists($dataid, $userids)) {
-            $userids[$dataid] = array();
+        if (! array_key_exists($dataid, $staticuserids)) {
+            $staticuserids[$dataid] = array();
 
             if ($dataid) {
                 $select = 'c.*';
@@ -1764,28 +1863,28 @@ class data_field_report extends data_field_base {
                     $accessallusers = has_capability('moodle/site:accessallgroups', $context);
                 }
                 if ($accessallusers) {
-                    $userids[$dataid] = get_enrolled_users($context);
-                    $userids[$dataid] = array_keys($userids[$dataid]);
+                    $staticuserids[$dataid] = get_enrolled_users($context);
+                    $staticuserids[$dataid] = array_keys($staticuserids[$dataid]);
                 } else {
                     if ($groups = groups_get_activity_allowed_groups($this->cm)) {
                         list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
-                        $userids[$dataid] = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'id', 'id,userid');
-                        if ($userids[$dataid]) {
-                            $userids[$dataid] = array_unique($userids[$dataid]);
-                            $userids[$dataid] = array_values($userids[$dataid]);
+                        $staticuserids[$dataid] = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'id', 'id,userid');
+                        if ($staticuserids[$dataid]) {
+                            $staticuserids[$dataid] = array_unique($staticuserids[$dataid]);
+                            $staticuserids[$dataid] = array_values($staticuserids[$dataid]);
                         } else {
-                            $userids[$dataid] = array();
+                            $staticuserids[$dataid] = array();
                         }
                     }
                 }
-                sort($userids[$dataid]);
+                sort($staticuserids[$dataid]);
             }
         }
 
-        if (empty($users)) {
-            return $userids[$dataid];
+        if (empty($userids)) {
+            return $staticuserids[$dataid];
         } else {
-            return array_intersect($userids[$dataid], $users);
+            return array_intersect($staticuserids[$dataid], $userids);
         }
     }
 
@@ -1820,36 +1919,36 @@ class data_field_report extends data_field_base {
 
     protected function valid_groupids($groups, $course, $multiple) {
         global $DB;
-        static $groupids = array();
+        static $staticgroupids = array();
 
-        if (! array_key_exists($groups, $groupids)) {
+        if (! array_key_exists($groups, $staticgroupids)) {
             $activitygroupids = groups_get_activity_allowed_groups($this->cm);
             $activitygroupids = array_keys($activitygroupids);
             if ($groups) {
-                $groupids[$groups] = array();
+                $staticgroupids[$groups] = array();
                 if (preg_match('/^[0-9]+$/', $groups)) {
                     $params = array('id' => $groups, 'course' => $this->data->course);
                     if ($records = $DB->get_records('groups', $params, 'id', 'id,course')) {
-                        $groupids[$groups] = array_keys($records);
+                        $staticgroupids[$groups] = array_keys($records);
                     }
                 } else {
                     list($select, $params) = $this->get_sql_like('name', $groups);
                     $select = "course = ? AND $select";
                     array_unshift($params, $this->data->course);
                     if ($records = $DB->get_records_select('groups', $select, $params, 'id', 'id,course')) {
-                        $groupids[$groups] = array_keys($records);
+                        $staticgroupids[$groups] = array_keys($records);
                     }
                 }
-                $groupids[$groups] = array_intersect($groupids[$groups], $activitygroupids);
+                $staticgroupids[$groups] = array_intersect($staticgroupids[$groups], $activitygroupids);
             } else {
-                $groupids[$groups] = $activitygroupids;
+                $staticgroupids[$groups] = $activitygroupids;
             }
         }
 
         if ($multiple) {
-            return $groupids[$groups];
+            return $staticgroupids[$groups];
         } else {
-            return reset($groupids[$groups]);
+            return reset($staticgroupids[$groups]);
         }
     }
 

@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2021-05-12 (29)
+ - add new GET_ACTIVE_USERS function to shorten list of users to only those who have submitted something
+
 2020-09-15 (28)
  - add more efficient mechanism for defining default values when computing values for arguments
 
