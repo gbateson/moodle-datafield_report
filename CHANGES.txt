@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2021-05-14 (30)
+ - fix error arising from array_rand() return a scalr value sometimes
+
 2021-05-12 (29)
  - add new GET_ACTIVE_USERS function to shorten list of users to only those who have submitted something
 

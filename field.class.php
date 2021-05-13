@@ -645,13 +645,19 @@ class data_field_report extends data_field_base {
                                     // add all ids
                                     $ids = array_keys($ids);
                                     $countremaining -= $count;
-                                } else {
+                                } else if ($countremaining > 1) {
                                     // add only a random subset of ids
                                     $ids = array_rand($ids, $countremaining);
                                     $countremaining = 0; // force end of loop
                                 }
-                                shuffle($ids);
-                                $menu += $ids;
+                                if (is_scalar($ids)) {
+                                    // if $countremaining was 1, then "array_rand()"
+                                    // returned a single scalar value - gotcha !!
+                                    $menu[] = $ids;
+                                } else {
+                                    shuffle($ids);
+                                    $menu += $ids;
+                                }
                             }
                         }
                         $userids = $menu;
