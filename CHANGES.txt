@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2021-05-21 (32)
+ - add NEXT and PREVIOUS function to locate target database reletive to current database in the course.
+
 2021-05-14 (30)
  - fix error arising from array_rand() return a scalr value sometimes
 

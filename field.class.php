@@ -424,10 +424,8 @@ class data_field_report extends data_field_base {
                         break;
 
                     case 'CURRENT_GROUP':
-                        if ($group = groups_get_activity_group($this->cm)) {
-                            return $group;
-                        }
-                        // deliberate drop through to CURRENT_GROUPS
+                        return groups_get_activity_group($this->cm);
+                        break;
 
                     case 'CURRENT_GROUPS':
                         $groups = groups_get_activity_allowed_groups($this->cm);
@@ -466,6 +464,68 @@ class data_field_report extends data_field_base {
             return 'Unknown argument type: '.$argument->type;
         }
         return null;
+    }
+
+    protected function compute_previous($recordid, $arguments) {
+        return $this->find_cm($recordid, $arguments, -1);
+    }
+
+    protected function compute_next($recordid, $arguments) {
+        return $this->find_cm($recordid, $arguments, 1);
+    }
+
+    protected function find_cm($recordid, $arguments, $type) {
+        global $CFG;
+
+        if ($activityname = $this->compute($recordid, array_shift($arguments))) {
+            $replacements = array('^' => 'START_OF_STRING',
+                                  '*' => 'ANY_CHARS',
+                                  '.' => 'SINGLE_CHARS',
+                                  '$' => 'END_OF_STRING');
+            $activityname = strtr($activityname, $replacements);
+
+            $activityname = '/'.preg_quote($activityname, '/').'/u';
+
+            $replacements = array('START_OF_STRING' => '^',
+                                  'ANY_CHARS' => '.*',
+                                  'SINGLE_CHARS' => '.',
+                                  'END_OF_STRING' => '$');
+            $activityname = strtr($activityname, $replacements);
+        } else {
+            $activityname = '';
+        }
+
+        if (! $modname = $this->compute($recordid, array_shift($arguments))) {
+            $modname = 'data';
+        }
+
+
+        $found = false;
+        $prev = 0;
+
+        $modinfo = get_fast_modinfo($this->data->course);
+        foreach ($modinfo->get_cms() as $cmid => $cm) {
+            if ($cm->id == $this->cm->id) {
+                // this is the current database
+                if ($type == -1) {
+                    return $prev;
+                }
+                $found = true;
+            } else if ($modname == '' || $cm->modname == $modname) {
+                if ($activityname == '' || preg_match($activityname, $cm->name)) {
+                    // this is a matching activity
+                    if ($found == false) {
+                        $prev = $cm->instance;
+                    } else {
+                        // We can only get here if we found a matching activity
+                        // after the current database has been found, so we can
+                        // just return the activity instance id (e.g. dataid). 
+                        return $cm->instance;
+                    }
+                }
+            }
+        }
+        return 0; // We couldn't find a matching "next" activity.
     }
 
     /**
@@ -529,6 +589,7 @@ class data_field_report extends data_field_base {
      *
      * @param array $arguments
      * @param integer $recordid
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return array
      */
     protected function compute_get_records($recordid, $arguments, $multiple=true) {
@@ -559,6 +620,8 @@ class data_field_report extends data_field_base {
      *
      * @param array $arguments
      * @param integer $recordid
+     * @param mixed $default users
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return array
      */
     protected function compute_get_user_records($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
@@ -575,21 +638,39 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_get_active_users
-     * GET_USER_RECORDS(database, groups, countfield, menulength)
+     * compute_get_active_others
+     * GET_ACTIVE_OTHERS(database, groups, countfield, menulength)
      *
      * @param array $arguments
      * @param integer $recordid
+     * @param mixed $default group
      * @return array
      */
-    protected function compute_get_active_users($recordid, $arguments, $default='CURRENT_GROUP', $multiple=true) {
+    protected function compute_get_active_others($recordid, $arguments, $default='CURRENT_GROUP') {
+        return $this->compute_get_active_users($recordid, $arguments, $default, true);
+    }
+
+    /**
+     * compute_get_active_users
+     * GET_ACTIVE_USERS(database, groups, countfield, menulength)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param mixed $default group
+     * @param boolean $excludeme TRUE if current user should be excluded from result; otherwise FALSE
+     * @return array
+     */
+    protected function compute_get_active_users($recordid, $arguments, $default='CURRENT_GROUP', $excludeme=false) {
         global $DB, $USER;
         // get the target database (typically, this is NOT the current database)
         if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+
             $dataid = $this->valid_dataid($database);
             if ($groups = $this->compute($recordid, array_shift($arguments), $default)) {
                 if (is_scalar($groups)) {
                     $groups = array($groups);
+                } else {
+                    $groups = array_filter($groups);
                 }
             }
             if (empty($groups)) {
@@ -607,12 +688,18 @@ class data_field_report extends data_field_base {
                     $params = array(0);
                 }
             }
-
-            $dataid = $this->data->id; // current database
+            if ($excludeme) {
+                $select .= ' AND userid <> ?';
+                $params[] = $USER->id;
+            }
             if ($userids = $DB->get_records_select_menu('data_records', $select, $params, 'id', 'id,userid')) {
-                $userids = $this->valid_userids($dataid, array_unique($userids));
 
-                // $countfield is database field that holds the userid to which this record relates.
+                $dataid = $this->data->id; // the id of the current database
+                $userids = $this->valid_userids($dataid, array_unique($userids));
+                // $userids holds ids of users who have records in the target database
+                // and who are accessible to the current user in the current database.
+
+                // $countfield is the database field that holds the userid to which this record relates.
                 // Note: this is different from the "userid" field in the "data_records" table.
                 $countfield = $this->compute($recordid, array_shift($arguments), '');
                 if ($countfield = $this->valid_fieldid($dataid, $countfield)) {
@@ -629,7 +716,6 @@ class data_field_report extends data_field_base {
                     $from   = '{data_content} dc LEFT JOIN {data_records} dr ON dc.recordid = dr.id';
                     $group  = 'dc.content';
                     if ($ids = $DB->get_records_sql_menu("SELECT $select FROM $from WHERE $where GROUP BY $group", $params)) {
-
                         $userids = array(0 => array_fill_keys($userids, 0));
                         foreach ($ids as $id => $count) {
                             unset($userids[0][$id]);
@@ -645,7 +731,7 @@ class data_field_report extends data_field_base {
                                     // add all ids
                                     $ids = array_keys($ids);
                                     $countremaining -= $count;
-                                } else if ($countremaining > 1) {
+                                } else if ($countremaining >= 1) {
                                     // add only a random subset of ids
                                     $ids = array_rand($ids, $countremaining);
                                     $countremaining = 0; // force end of loop
@@ -656,7 +742,7 @@ class data_field_report extends data_field_base {
                                     $menu[] = $ids;
                                 } else {
                                     shuffle($ids);
-                                    $menu += $ids;
+                                    $menu = array_merge($menu, $ids);
                                 }
                             }
                         }
@@ -687,7 +773,8 @@ class data_field_report extends data_field_base {
      *
      * @param array $arguments
      * @param integer $recordid
-     * @param boolean $multiple
+     * @param mized $default records
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return integer
      */
     protected function compute_get_values($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
@@ -739,7 +826,8 @@ class data_field_report extends data_field_base {
      *
      * @param array $arguments
      * @param integer $recordid
-     * @param boolean $multiple
+     * @param mixed $default groups
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return integer
      */
     protected function compute_get_groups($recordid, $arguments, $default='CURRENT_GROUPS', $multiple=true) {
@@ -796,6 +884,8 @@ class data_field_report extends data_field_base {
      * USERS(format, userids)
      *
      * @param array $arguments
+     * @param mixed $default users
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return string
      */
     protected function compute_users($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
@@ -878,9 +968,8 @@ class data_field_report extends data_field_base {
      * compute_url
      * FILE_URL(field, records)
      *
-     * @param array $arguments
      * @param integer $recordid
-     * @param boolean $multiple
+     * @param array $arguments
      * @return integer
      */
     protected function compute_url($recordid, $arguments) {
@@ -891,8 +980,8 @@ class data_field_report extends data_field_base {
      * compute_urls
      * FILE_URLS(field, records)
      *
-     * @param array $arguments
      * @param integer $recordid
+     * @param array $arguments
      * @param boolean $multiple
      * @return integer
      */
@@ -1487,11 +1576,10 @@ class data_field_report extends data_field_base {
                 $output .= html_writer::select($items, $formfieldname, $value, $choose, $params);
             } else {
                 // Only one value, so use hidden <input> element.
-                $items = implode('', $items);
                 $params = array('type' => 'hidden',
                                 'name' => $formfieldname,
-                                'value' => $items);
-                $output = html_writer::empty_tag('input', $params).$items;
+                                'value' => key($items));
+                $output = html_writer::empty_tag('input', $params).reset($items);
             }
         }
         return $output;

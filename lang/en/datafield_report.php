@@ -160,6 +160,13 @@ $string['reportfieldfunctions'] = '
 *   GET_COURSE_USERS(course=CURRENT_COURSE)
 :   return an array of userids
 
+*   GET_ACTIVE_USERS(database=CURRENT_DATABASE, groups=CURRENT_GROUP, countfield="", menulength=5)
+:   return an array of userids (including current user)
+
+*   GET_ACTIVE_OTHERS(database=CURRENT_DATABASE, groups=CURRENT_GROUP, countfield="", menulength=5)
+:   return an array of userids (excluding current user)
+
+
 #### Functions to format ids and values for output
 
 *   USER(format=DEFAULT_NAME_FORMAT, userid=CURRENT_USER)
@@ -268,7 +275,9 @@ $string['reportfieldfunctions'] = '
 :   d=99 a database id number
 :   id=99 a course module id number
 :   cmid=99 a course module id number
-:   otherwise, a string that matches the name of database in the specified course.
+:   a string that matches the name of database in the specified course
+:   NEXT(name string or activity type) e.g. NEXT(DATABASE), NEXT("*Feedback*")
+:   PREVIOUS(name string or activity type)
 
 *   "course" can be one of the following:
 :   a course id number
