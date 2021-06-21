@@ -78,10 +78,11 @@ echo data_field_admin::format_table_row($name, $label, $text, $help);
 // additional format (param5)
 $param = 'param5';
 $value = (empty($this->field->$param) ? '' : $this->field->$param);
-$name = 'extraformat3';
+$name = 'restoretype';
 $label = get_string($name, 'datafield_report');
 $help = $OUTPUT->help_icon($name, 'datafield_report');
-$text = data_field_admin::format_textarea_field($param, $value, $name, 2);
+$options = data_field_report::get_restore_types();
+$text  = data_field_admin::format_select_field($param, $options, $value, $name);
 echo data_field_admin::format_table_row($name, $label, $text, $help);
 
 // Finish list (DL)

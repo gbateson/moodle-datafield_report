@@ -3,6 +3,9 @@ Change log for datafield_report
 ========================================
 
 2021-05-21 (32)
+ - reuse param5 to specify how field content should be handled during import/export andbackup/restore
+
+2021-05-21 (32)
  - add NEXT and PREVIOUS function to locate target database reletive to current database in the course.
 
 2021-05-14 (30)

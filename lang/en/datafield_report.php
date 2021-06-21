@@ -68,8 +68,6 @@ $string['extraformat1_help'] = $string['extraformat_help'];
 $string['extraformat1'] = 'Extra format (1)';
 $string['extraformat2_help'] = $string['extraformat_help'];
 $string['extraformat2'] = 'Extra format (2)';
-$string['extraformat3_help'] = $string['extraformat_help'];
-$string['extraformat3'] = 'Extra format (3)';
 $string['fieldtypelabel'] = 'Report field';
 $string['inputformat_help'] = 'The format of this field on the "Add entry" and "Advanced search" templates.';
 $string['inputformat'] = 'Input format';
@@ -298,6 +296,16 @@ $string['reportfieldfunctions'] = '
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 ';
+$string['restoretype_help'] = 'This setting signifies how to handle values imported during a "restore" or "Import entries" operation.
+
+*   **Default:** the default action, i.e. the value will be stored as it is, without any processing
+*   **Ignore:** imported value should be ignored (i.e. stored value will be set to NULL)
+*   **Username:** imported value is a username and will be converted to a userid
+*   **User full name:** imported value is a user\'s fullname and will be converted to a userid
+*   **Group name:** imported value is the name of an group and will be converted to a group id
+*   **Activity name:** imported value is the name of an activity and will be converted to a course module id
+*   **Course name:** imported value is the name of course and will be converted to a course id';
+$string['restoretype'] = 'Restore type';
 $string['scorelistitem'] = '[{$a->numberpoints} x {$a->numbervotes} = {$a->totalpoints}] ';
 $string['scorelisttotal'] = '{$a->totalpoints} from {$a->countvotes} (average of {$a->averagepoints} per vote)';
 $string['sumofvalues'] = ' [the sum of {$a}]';

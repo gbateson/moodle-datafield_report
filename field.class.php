@@ -39,18 +39,33 @@ class data_field_report extends data_field_base {
 
     // param1: format for addtemplaate and asearchtemplate
     // param2: format for listtemplate and singletemplate
-    // param3, param4, param 5: extra format strings
+    // param3: extra format string
+    // param4: extra format string
+    // param5: optional field to signify how to handle values imported during an "Import entries" operation
+    //         default - the default action, i.e. the value will be stored as it is, without any processing
+    //         ignore - imported value should be ignored (i.e. data_content.content will be set to NULL)
+    //         username - imported value is a username and will be converted to a userid
+    //         fullnameuser - imported value is a user's fullname and will be converted to a userid
+    //         groupname - imported value is the name of an group and will be converted to a group id
+    //         activityname - imported value is the name of an activity and will be converted to a course module id
+    //         coursename - imported value is the name of course and will be converted to a course id
 
     var $studentids = null;
     var $teacherids = null;
 
     const REGEXP_FUNCTION_START = '/^\s*(\w+)\s*\(/s';
     const REGEXP_FUNCTION_END = '/^\s*\)/s';
-    const REGEXP_QUOTED_STRING = '/^\s*"([^"]*)"/s';
+    //const REGEXP_QUOTED_STRING = '/^\s*"([^"]*)"/s';
+    const REGEXP_QUOTED_STRING = '/^\s*(["\'])(.*?)\1/s';
     const REGEXP_CONSTANT = '/^\s*([A-Z][A-Z0-9_-]*)\s*(?=,|\)|$)/s';
     const REGEXP_INTEGER = '/^\s*([0-9]+)\s*(?=,|\)|$)/s';
     const REGEXP_STRING = '/\s*(.*?[^)])\s*$/s';
     const REGEXP_COMMA = '/^\s*,/s';
+
+    const HIRAGANA_STRING = '/^[ \x{3000}-\x{303F}\x{3040}-\x{309F}]+$/u';
+    const KATAKANA_FULL_STRING = '/^[ \x{3000}-\x{303F}\x{30A0}-\x{30FF}]+$/u';
+    const KATAKANA_HALF_STRING = '/^[ \x{3000}-\x{303F}\x{31F0}-\x{31FF}\x{FF61}-\x{FF9F}]+$/u';
+    const ROMAJI_STRING = '/^( |(t?chi|s?shi|t?tsu)|((b?by|t?ch|hy|jy|k?ky|p?py|ry|s?sh|s?sy|w|y)[auo])|((b?b|d|f|g|h|j|k?k|m|n|p?p|r|s?s|t?t|z)[aiueo])|[aiueo]|[mn])+$/i';
 
     /**
      * generate HTML to display icon for this field type on the "Fields" page
@@ -236,18 +251,94 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * text export is not supported for "action" fields
+     * export_text_value
+     *
      */
-    function text_export_supported() {
-        return false;
+    public function export_text_value($record) {
+    	return data_field_admin::get_export_value($record->fieldid);
     }
 
     /**
-     * text export is not supported for "action" fields
+     * update_content_import
+     *
+     * @param integer $recordid of newly added data record
+     * @param string $value of this field for current record in CSV file
+     * @param string $formfieldid e.g. "field_999", where "999" is the field id
      */
-    function export_text_value($record) {
-        return '';
+    public function update_content_import($recordid, $value, $formfieldid) {
+        global $DB;
+
+    	switch ($this->field->param5) {
+    	    case 'default':
+    	        // do nothing
+    	        break;
+
+    	    case 'ignore':
+    	        $value = null;
+    	        break;
+
+    	    case 'username':
+    	        $value = $DB->get_field('user', 'id', array('username' => $value));
+    	        break;
+
+    	    case 'fullnameuser':
+    	        if (($pos1 = strrpos($value, '(')) && ($pos2 = strpos($value, ')', $pos1))) {
+                    $value = trim(substr_replace($value, '', $pos1, $pos2 - $pos1));
+    	        }
+
+    	        $names = explode(' ', $value);
+    	        $names = array_map('trim', $names);
+    	        $names = array_filter($names);
+
+    	        $name1 = ''; // first name
+    	        $name2 = ''; // last name
+    	        $value = '';
+    	        while (empty($value) && count($names)) {
+    	            if ($name2) {
+                        $name1 .= ' '.array_shift($names);
+    	            }
+                    $name2 = implode(' ', $names);
+                    $select = '((firstname = ? AND lastname = ?) OR '.
+                               '(firstname = ? AND lastname = ?) OR '.
+                               '(firstnamephonetic = ? AND lastnamephonetic = ?) OR '.
+                               '(firstnamephonetic = ? AND lastnamephonetic = ?)) AND delete = ?';
+                    $params = array($name1, $name2, $name2, $name1,
+                                    $name1, $name2, $name2, $name1, 0);
+                    if ($value = $DB->get_records_select('user', $select, $params, 'id', 'id,username')) {
+                        $value = key($value); // get id of first matching user (we expect only one)
+                        // TODO: filter users to only those enrolled in the current course?
+                    }
+    	        }
+    	        break;
+
+    	    case 'groupname':
+    	        $params = array('course' => $this->data->course,
+    	                        'name' => $value);
+                $value = $DB->get_field('groups', 'id', $params);
+    	        break;
+
+    	    case 'activityname':
+    	        $name = trim($value);
+    	        $value = '';
+                $modinfo = get_fast_modinfo($this->data->course);
+                foreach ($modinfo->get_cms() as $cm) {
+                    if ($name == $cm->name) {
+                        $value = $cm->id;
+                        break;
+                    }
+                }
+    	        break;
+
+    	    case 'coursename':
+                $value = $DB->get_field('course', 'id', array('shortname' => $value));
+    	        break;
+    	}
+        if ($value === false) {
+            $value = '';
+        }
+    	return parent::update_content_import($recordid, $value, $formfieldid);
     }
+
 
     /**
      * Return the plugin configs for external functions.
@@ -298,7 +389,7 @@ class data_field_report extends data_field_base {
     protected function parse_argument($recordid, $text, $offset) {
         if (preg_match(self::REGEXP_QUOTED_STRING, substr($text, $offset), $match)) {
             $argument = (object)array('type' => 'string',
-                                      'value' => $match[1]);
+                                      'value' => $match[2]);
             $offset += strlen($match[0]);
             return array($argument, $offset);
         }
@@ -385,6 +476,7 @@ class data_field_report extends data_field_base {
                 if (method_exists($this, $method)) {
                     return $this->$method($recordid, $argument->arguments);
                 } else {
+                    die(get_string('errorunknownfunction', 'datafield_report', $argument->name));
                     return get_string('errorunknownfunction', 'datafield_report', $argument->name);
                 }
             }
@@ -400,51 +492,40 @@ class data_field_report extends data_field_base {
                         } else {
                             return $DB->get_field('data_records', 'userid', array('id' => $recordid));
                         }
-                        break;
 
                     case 'CURRENT_USER':
                         return $USER->id;
-                        break;
 
                     case 'CURRENT_RECORD':
                         return $recordid;
-                        break;
 
                     case 'CURRENT_RECORDS':
                         $params = array('dataid' => $$this->data->id, 'userid' => $USER->id);
                         return $DB->get_records_menu('data_records', $params, 'id', 'id,userid');
-                        break;
 
                     case 'CURRENT_DATABASE':
                         return $this->data->id;
-                        break;
 
                     case 'CURRENT_COURSE':
                         return $this->data->course;
-                        break;
 
                     case 'CURRENT_GROUP':
                         return groups_get_activity_group($this->cm);
-                        break;
 
                     case 'CURRENT_GROUPS':
                         $groups = groups_get_activity_allowed_groups($this->cm);
                         return array_keys($groups);
-                        break;
 
                     case 'CURRENT_USERS':
                         return $this->valid_userids();
-                        break;
 
                     case 'CURRENT_STUDENTS':
                         return array_intersect($this->valid_userids(),
                                                $this->valid_studentids());
-                        break;
 
                     case 'CURRENT_TEACHERS':
                         return array_intersect($this->valid_userids(),
                                                $this->valid_teacherids());
-                        break;
 
                     case 'DEFAULT_NAME_FORMAT':
                         $format = '';
@@ -455,7 +536,6 @@ class data_field_report extends data_field_base {
                             $format = get_string('fullnamedisplay');
                         }
                         return preg_replace('/\{\$a->(\w+)\}/', '$1', $format);
-                        break;
 
                     default:
                         return 'Unknown constant: '.$argument->value;
@@ -499,7 +579,6 @@ class data_field_report extends data_field_base {
             $modname = 'data';
         }
 
-
         $found = false;
         $prev = 0;
 
@@ -519,7 +598,7 @@ class data_field_report extends data_field_base {
                     } else {
                         // We can only get here if we found a matching activity
                         // after the current database has been found, so we can
-                        // just return the activity instance id (e.g. dataid). 
+                        // just return the activity instance id (e.g. dataid).
                         return $cm->instance;
                     }
                 }
@@ -869,6 +948,65 @@ class data_field_report extends data_field_base {
     //}
 
     /**
+     * compute_my_group_userids
+     * MY_GROUP_USERIDS()
+     *
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_my_group_userids($recordid, $arguments) {
+        global $DB;
+        $output = '';
+
+        $select = '';
+        if (empty($arguments)) {
+            $groups = groups_get_activity_allowed_groups($this->cm);
+            if (is_array($groups) && count($groups)) {
+                list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
+            }
+        } else {
+            $argument = array_shift($arguments);
+            switch ($argument->type) {
+
+                case 'string':
+                    list($select, $params) = $this->get_sql_like('name', $argument->value);
+                    $select = "course = ? AND name $select";
+                    array_unshift($params, $this->data->course);
+                    $groupid = $DB->get_field_select('groups', 'id', $select, $params);
+                    break;
+
+                case 'integer':
+                    $params = array('id' => $argument->value,
+                                    'course' => $this->data->course);
+                    $groupid = $DB->get_field('groups', 'id', $params);
+                    break;
+
+                default:
+                    $groupid = 0; // $this->compute($recordid, $argument[0])
+            }
+            if ($groupid) {
+                $select = '= ?';
+                $params = array($groupid);
+            }
+        }
+        if ($select) {
+            if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'userid', 'id, userid')) {
+                $userids = array_unique($userids);
+                $userids = array_flip($userids);
+                if ($teachers = $this->valid_teacherids()) {
+                    foreach ($teachers as $teacherid) {
+                        unset($userids[$teacherid]);
+                    }
+                }
+                if (count($userids)) {
+                    $output = array_flip($userids);
+                }
+            }
+        }
+        return $output;
+    }
+
+    /**
      * compute_user
      * USER(format, user)
      *
@@ -906,7 +1044,7 @@ class data_field_report extends data_field_base {
                 if ($users = $DB->get_records_select('user', "id $select", $params)) {
                     $output = array();
                     foreach ($users as $user) {
-                        $output[$user->id] = $this->format_user_name($format, $user);
+                        $output[$user->id] = $this->format_user_name($recordid, $format, $user);
                     }
                 }
             } else {
@@ -916,7 +1054,7 @@ class data_field_report extends data_field_base {
                     $userid = intval(reset($userids));
                 }
                 if ($user = $DB->get_record('user', array('id' => $userid))) {
-                    $output = $this->format_user_name($format, $user);
+                    $output = $this->format_user_name($recordid, $format, $user);
                 }
             }
         }
@@ -931,30 +1069,79 @@ class data_field_report extends data_field_base {
      * @param object $user record from Moodle database
      * @return string $user formatted by $format string
      */
-    protected function format_user_name($format, $user) {
-        static $search = '/firstnamephonetic|lastnamephonetic|'.
-                          'firstname|middlename|lastname|'.
-                          'alternatename/i';
+    protected function format_user_name($recordid, $format, $user) {
 
         if ($format == 'default') {
-            return fullname($user);
+            $format = '';
         }
-        return preg_replace_callback(
-            $search,
+
+        // replace ENGLISH|JAPANESE NAME
+        $format = preg_replace_callback(
+            '/\b([A-Z]+)_NAME\b/i',
+            function($matches) use ($user) {
+                $name = $matches[0];
+                switch ($matches[1]) {
+                    case 'ENGLISH':
+                    case 'INTERNATIONAL':
+                    case 'LOWASCII':
+                    case 'SINGLEBYTE':
+                        $search = '/^[ -~]+$/';
+                        if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
+                            return 'Firstname LASTNAME';
+                        }
+                        if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
+                            return 'Firstnamephonetic LASTNAMEPHONETIC';
+                        }
+                        $name = preg_replace('/[^ -~]+/', '', $user->alternatename);
+                        $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
+                        $name = preg_replace('/\s+/', ' ', trim($name));
+                        return $name;
+
+                    case 'CHINESE':
+                    case 'JAPANESE':
+                    case 'KOREAN':
+                    case 'HIGHASCII':
+                    case 'DOUBLEBYTE':
+                        $search = '/^[^ -~]+$/';
+                        if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
+                            return 'lastname firstname';
+                        }
+                        if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
+                            return 'lastnamephonetic firstnamephonetic';
+                        }
+                        $name = preg_replace('/[ -~]+/', '', $user->alternatename);
+                        $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
+                        $name = preg_replace('/\s+/', ' ', trim($name));
+                        return $name;
+                }
+                return $name;
+            },
+            $format
+        );
+
+        // replace main user name fields
+        $format = preg_replace_callback(
+            '/\b(firstnamephonetic|lastnamephonetic|'.
+                'firstname|middlename|lastname|'.
+                'first|middle|last|'.
+                'alternatename|alternate)\b/i',
             function($matches) use ($user) {
                 $match = $matches[0];
                 $name = strtolower($match);
                 if (isset($user->$name)) {
+                    if ($name == 'first' || $name == 'middle' || $name == 'last' || $name == 'alternate') {
+                        $name .= 'name';
+                    }
                     $name = $user->$name;
                     switch (true) {
                         case preg_match('/^[A-Z]+$/', $match):
-                            $name = strtoupper($name);
+                            $name = mb_convert_case($name, MB_CASE_LOWER);
                             break;
                         case preg_match('/^[a-z]+$/', $match):
-                            $name = strtolower($name);
+                            $name = mb_convert_case($name, MB_CASE_LOWER);
                             break;
                         case preg_match('/^[A-Z][a-z]+$/', $match):
-                            $name = ucwords($name);
+                            $name = mb_convert_case($name, MB_CASE_TITLE);
                             break;
                     }
                 }
@@ -962,6 +1149,124 @@ class data_field_report extends data_field_base {
             },
             $format
         );
+
+        // compute name functions (UPPERCASE, ROMANIZE, BRACKETS etc)
+        $offset = 0;
+        if ($arguments = $this->parse_arguments($recordid, $format, $offset)) {
+            list($arguments, $offset) = $arguments;
+            foreach ($arguments as $a => $argument) {
+                $arguments[$a] = $this->compute($recordid, $argument);
+            }
+            $format = implode('', $arguments);
+        }
+
+        if ($format == '') {
+            $format = fullname($user);
+        }
+
+        return $format;
+    }
+
+    /**
+     * compute_brackets
+     * BRACKETS(str)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_brackets($recordid, $arguments) {
+        if ($str = $this->compute($recordid, array_shift($arguments))) {
+            return "($str)";
+        } else {
+            return '';
+        }
+    }
+
+    /**
+     * compute_uppercase
+     * UPPERCASE(str)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_uppercase($recordid, $arguments) {
+        $text = $this->compute($recordid, array_shift($arguments));
+        return mb_convert_case($text, MB_CASE_UPPER);
+    }
+
+    /**
+     * compute_lowercase
+     * LOWERCASE(str)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_lowercase($recordid, $arguments) {
+        $text = $this->compute($recordid, array_shift($arguments));
+        return mb_convert_case($text, MB_CASE_LOWER);
+    }
+
+    /**
+     * compute_titlecase
+     * TITLECASE(str)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_titlecase($recordid, $arguments) {
+        $text = $this->compute($recordid, array_shift($arguments));
+        return mb_convert_case($text, MB_CASE_TITLE);
+    }
+
+    /**
+     * compute_romanize
+     * ROMANIZE(str)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_romanize($recordid, $arguments) {
+        $text = $this->compute($recordid, array_shift($arguments));
+
+        if (preg_match(self::ROMAJI_STRING, $text)) {
+            $text = self::romanize_romaji($text, $field);
+        }
+
+        if (preg_match(self::HIRAGANA_STRING, $text)) {
+            $text = self::romanize_hiragana($text);
+        }
+
+        if (preg_match(self::KATAKANA_FULL_STRING, $text)) {
+            $text = self::romanize_katakana_full($text);
+        }
+
+        if (preg_match(self::KATAKANA_HALF_STRING, $text)) {
+            $text = self::romanize_katakana_half($text);
+        }
+
+        // what to do with these names:
+        // ooizumi, ooie, ooba, oohama, tooru, iita (井板), fujii (藤井)
+        // takaaki, maako, kousuke, koura, inoue, matsuura, yuuki
+        // nanba, junpei, junichirou, shinya, shinnosuke, gonnokami, shinnou
+
+        $text = strtr($text, array(
+            'noue' => 'noue', 'kaaki' => 'kaaki',
+            'aa' => 'ā', 'ii' => 'ī', 'uu' => 'ū',
+            'ee' => 'ē', 'oo' => 'ō', 'ou' => 'ō'
+        ));
+
+        $text = strtr($text, array(
+            'ooa' => "oh'a", 'ooi' => "oh'i", 'oou' => "oh'u",
+            'ooe' => "oh'e", 'ooo' => "oh'o", 'too' => 'to',
+            'oo'  => 'oh',   'ou'  => 'o',    'uu'  => 'u'
+        ));
+
+        return $text;
     }
 
     /**
@@ -1430,11 +1735,14 @@ class data_field_report extends data_field_base {
      * @return string
      */
     protected function compute_concat($recordid, $arguments) {
-        $items = $this->compute($recordid, array_shift($arguments));
+        $items = array();
+        while ($item = $this->compute($recordid, array_shift($arguments))) {
+            $items[] = $item;
+        }
         if (empty($items)) {
             return '';
         }
-        return implode('', $items);
+        return trim(implode('', $items));
     }
 
     /**
@@ -1451,6 +1759,8 @@ class data_field_report extends data_field_base {
         if (empty($items)) {
             return '';
         }
+        $items = array_map('trim', $items);
+        $items = array_filter($items);
         return implode($str, $items);
     }
 
@@ -1646,12 +1956,12 @@ class data_field_report extends data_field_base {
             default:
                 $scores = $scoretype.get_string('labelsep', 'langconfig').implode(', ', $scores);
         }
-        return html_writer::span($scores, 'score'); 
+        return html_writer::span($scores, 'score');
     }
 
     /**
      * get_items_scores
-     * 
+     *
      * @param integer $recordid
      * @param mixed $field
      * @param mixed $arguments
@@ -2086,60 +2396,210 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_my_group_userids
+     * romanize_romaji
      *
-     * @param array $arguments
      * @return string
      */
-    protected function compute_my_group_userids($recordid, $arguments) {
-        global $DB;
-        $output = '';
+    static public function romanize_romaji($name, $field='firstname') {
 
-        $select = '';
-        if (empty($arguments)) {
-            $groups = groups_get_activity_allowed_groups($this->cm);
-            if (is_array($groups) && count($groups)) {
-                list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
-            }
+        // convert to lowercase
+        $name= self::textlib('strtolower', $name);
+
+        // fix "si", "ti", "tu", "sy(a|u|o)", "jy(a|u|o)" and "nanba"
+        $name = strtr($name, array(
+            'si' => 'shi', 'ti' => 'chi', 'tu' => 'tsu',
+            'sy' => 'sh',  'jy' =>'j',    'nb' => 'mb'
+        ));
+
+        // fix "hu" (but not "chu" or "shu") e.g. hujimura
+        $name = preg_replace('/(?<![cs])hu/', 'fu', $name);
+
+        if (is_numeric(strpos($field, 'firstname'))) {
+            // kiyou(hei)
+            // shiyou(go|hei|ta|tarou)
+            // shiyun(suke|ya), shiyuu(ji|ta|tarou|ya)
+            // riyou(ga|ki|suke|ta|tarou|ya)
+            // riyuu(ichi|ki|ta|ma|saku|sei|shi|zou)
+            $replace = array(
+                'kiyou'  => 'kyou',
+                'shiyou' => 'shou', 'jiyou' => 'jou',
+                'shiyuu' => 'shuu', 'jiyuu' => 'juu',
+                'shiyun' => 'shun', 'jiyun' => 'jun',
+                'riyou'  => 'ryou', 'riyuu' => 'ryuu'
+            );
         } else {
-            $argument = array_shift($arguments);
-            switch ($argument->type) {
-
-                case 'string':
-                    list($select, $params) = $this->get_sql_like('name', $argument->value);
-                    $select = "course = ? AND name $select";
-                    array_unshift($params, $this->data->course);
-                    $groupid = $DB->get_field_select('groups', 'id', $select, $params);
-                    break;
-
-                case 'integer':
-                    $params = array('id' => $argument->value,
-                                    'course' => $this->data->course);
-                    $groupid = $DB->get_field('groups', 'id', $params);
-                    break;
-
-                default:
-                    $groupid = 0; // $this->compute($recordid, $argument[0])
-            }
-            if ($groupid) {
-                $select = '= ?';
-                $params = array($groupid);
-            }
+            // gasshiyou (GASSHŌ)
+            // miyoujin (MYŌJIN)
+            // mukaijiyou (MUKAIJŌ)
+            // chiya(da|ta)ani (not UCHIYAMA or TSUCHIYA)
+            $replace = array(
+                'shiyou'    => 'shou',
+                'jiyou'     => 'jou',
+                'miyou'     => 'myou',
+                'chiyatani' => 'chatani',
+                'chiyadani' => 'chadani'
+            );
         }
-        if ($select) {
-            if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'userid', 'id, userid')) {
-                $userids = array_unique($userids);
-                $userids = array_flip($userids);
-                if ($teachers = $this->get_teachers()) {
-                    foreach ($teachers as $teacher) {
-                        unset($userids[$teacher->id]);
-                    }
-                }
-                if (count($userids)) {
-                    $output = array_flip($userids);
-                }
-            }
-        }
-        return $output;
+
+        return self::romanize($name, '', $replace);
     }
+
+    /**
+     * romanize_hiragana
+     *
+     * @param string $name
+     * @return string $name
+     */
+    static public function romanize_hiragana($name) {
+        return self::romanize($name, 'っ', array(
+            // space
+            '　' => ' ',
+
+            // two-char (double-byte hiragana)
+            'きゃ' => 'kya', 'ぎゃ' => 'gya', 'しゃ' => 'sha', 'じゃ' => 'ja',
+            'ちゃ' => 'cha', 'にゃ' => 'nya', 'ひゃ' => 'hya', 'りゃ' => 'rya',
+
+            'きゅ' => 'kyu', 'ぎゅ' => 'gyu', 'しゅ' => 'shu', 'じゅ' => 'ju',
+            'ちゅ' => 'chu', 'にゅ' => 'nyu', 'ひゅ' => 'hyu', 'りゅ' => 'ryu',
+
+            'きょ' => 'kyo', 'ぎょ' => 'gyo', 'しょ' => 'sho', 'じょ' => 'jo',
+            'ちょ' => 'cho', 'にょ' => 'nyo', 'ひょ' => 'hyo', 'りょ' => 'ryo',
+
+            'んあ' => "n'a", 'んい' => "n'i", 'んう' => "n'u", 'んえ' => "n'e", 'んお' => "n'o",
+            'んや' => "n'ya", 'んゆ' => "n'yu", 'んよ' => "n'yo",
+
+            // one-char (double-byte hiragana)
+            'あ' => 'a', 'い' => 'i', 'う' => 'u', 'え' => 'e', 'お' => 'o',
+            'か' => 'ka', 'き' => 'ki', 'く' => 'ku', 'け' => 'ke', 'こ' => 'ko',
+            'が' => 'ga', 'ぎ' => 'gi', 'ぐ' => 'gu', 'げ' => 'ge', 'ご' => 'go',
+            'さ' => 'sa', 'し' => 'shi', 'す' => 'su', 'せ' => 'se', 'そ' => 'so',
+            'ざ' => 'za', 'じ' => 'ji', 'ず' => 'zu', 'ぜ' => 'ze', 'ぞ' => 'zo',
+            'た' => 'ta', 'ち' => 'chi', 'つ' => 'tsu', 'て' => 'te', 'と' => 'to',
+            'だ' => 'da', 'ぢ' => 'ji', 'づ' => 'zu', 'で' => 'de', 'ど' => 'do',
+            'な' => 'na', 'に' => 'ni', 'ぬ' => 'nu', 'ね' => 'ne', 'の' => 'no',
+            'は' => 'ha', 'ひ' => 'hi', 'ふ' => 'fu', 'へ' => 'he', 'ほ' => 'ho',
+            'ば' => 'ba', 'び' => 'bi', 'ぶ' => 'bu', 'べ' => 'be', 'ぼ' => 'bo',
+            'ぱ' => 'pa', 'ぴ' => 'pi', 'ぷ' => 'pu', 'ぺ' => 'pe', 'ぽ' => 'po',
+            'ま' => 'ma', 'み' => 'mi', 'む' => 'mu', 'め' => 'me', 'も' => 'mo',
+            'や' => 'ya', 'ゆ' => 'yu', 'よ' => 'yo',
+            'ら' => 'ra', 'り' => 'ri', 'る' => 'ru', 'れ' => 're', 'ろ' => 'ro',
+            'わ' => 'wa', 'を' => 'o', 'ん' => 'n'
+        ));
+    }
+
+    /**
+     * romanize_katakana_full
+     *
+     * @param string $name
+     * @return string $name
+     */
+    static public function romanize_katakana_full($name) {
+        return self::romanize($name, 'ッ', array(
+            // space
+            '　' => ' ',
+
+            // two-char (full-width katakana)
+            'キャ' => 'kya', 'ギャ' => 'gya', 'シャ' => 'sha', 'ジャ' => 'ja',
+            'チャ' => 'cha', 'ニャ' => 'nya', 'ヒャ' => 'hya', 'リャ' => 'rya',
+
+            'キュ' => 'kyu', 'ギュ' => 'gyu', 'シュ' => 'shu', 'ジュ' => 'ju',
+            'チュ' => 'chu', 'ニュ' => 'nyu', 'ヒュ' => 'hyu', 'リュ' => 'ryu',
+
+            'キョ' => 'kyo', 'ギョ' => 'gyo', 'ショ' => 'sho', 'ジョ' => 'jo',
+            'チョ' => 'cho', 'ニョ' => 'nyo', 'ヒョ' => 'hyo', 'リョ' => 'ryo',
+
+            'ンア' => "n'a", 'ンイ' => "n'i", 'ンウ' => "n'u", 'ンエ' => "n'e", 'ンオ' => "n'o",
+            'ンヤ' => "n'ya", 'ンユ' => "n'yu", 'ンヨ' => "n'yo",
+
+            // one-char (full-width katakana)
+            'ア' => 'a', 'イ' => 'i', 'ウ' => 'u', 'エ' => 'e', 'オ' => 'o',
+            'カ' => 'ka', 'キ' => 'ki', 'ク' => 'ku', 'ケ' => 'ke', 'コ' => 'ko',
+            'ガ' => 'ga', 'ギ' => 'gi', 'グ' => 'gu', 'ゲ' => 'ge', 'ゴ' => 'go',
+            'サ' => 'sa', 'シ' => 'shi', 'ス' => 'su', 'セ' => 'se', 'ソ' => 'so',
+            'ザ' => 'za', 'ジ' => 'ji', 'ズ' => 'zu', 'ゼ' => 'ze', 'ゾ' => 'zo',
+            'タ' => 'ta', 'チ' => 'chi', 'ツ' => 'tsu', 'テ' => 'te', 'ト' => 'to',
+            'ダ' => 'da', 'ヂ' => 'ji', 'ヅ' => 'zu', 'デ' => 'de', 'ド' => 'do',
+            'ナ' => 'na', 'ニ' => 'ni', 'ヌ' => 'nu', 'ネ' => 'ne', 'ノ' => 'no',
+            'ハ' => 'ha', 'ヒ' => 'hi', 'フ' => 'fu', 'ヘ' => 'he', 'ホ' => 'ho',
+            'バ' => 'ba', 'ビ' => 'bi', 'ブ' => 'bu', 'ベ' => 'be', 'ボ' => 'bo',
+            'パ' => 'pa', 'ピ' => 'pi', 'プ' => 'pu', 'ペ' => 'pe', 'ポ' => 'po',
+            'マ' => 'ma', 'ミ' => 'mi', 'ム' => 'mu', 'メ' => 'me', 'モ' => 'mo',
+            'ヤ' => 'ya', 'ユ' => 'yu', 'ヨ' => 'yo',
+            'ラ' => 'ra', 'リ' => 'ri', 'ル' => 'ru', 'レ' => 're', 'ロ' => 'ro',
+            'ワ' => 'wa', 'ヲ' => 'o', 'ン' => 'n'
+        ));
+    }
+
+    /**
+     * romanize_katakana_full
+     *
+     * @param string $name
+     * @return string $name
+     */
+    static public function romanize_katakana_half($name) {
+        return self::romanize($name, 'ｯ', array(
+            // space
+            '　' => ' ',
+
+            // two-char (half-width katakana)
+            'ｷｬ' => 'kya', 'ｷﾞｬ' => 'gya', 'ｼｬ' => 'sha', 'ｼﾞｬ' => 'ja',
+            'ﾁｬ' => 'cha', 'ﾆｬ' => 'nya', 'ﾋｬ' => 'hya', 'ﾘｬ' => 'rya',
+
+            'ｷｭ' => 'kyu', 'ｷﾞｭ' => 'gyu', 'ｼｭ' => 'shu', 'ｼﾞｭ' => 'ju',
+            'ﾁｭ' => 'chu', 'ﾆｭ' => 'nyu', 'ﾋｭ' => 'hyu', 'ﾘｭ' => 'ryu',
+
+            'ｷｮ' => 'kyo', 'ｷﾞｮ' => 'gyo', 'ｼｮ' => 'sho', 'ｼﾞｮ' => 'jo',
+            'ﾁｮ' => 'cho', 'ﾆｮ' => 'nyo', 'ﾋｮ' => 'hyo', 'ﾘｮ' => 'ryo',
+
+            'ｶﾞ' => 'ga', 'ｷﾞ' => 'gi', 'ｸﾞ' => 'gu', 'ｹﾞ' => 'ge', 'ｺﾞ' => 'go',
+            'ｻﾞ' => 'za', 'ｼﾞ' => 'ji', 'ｽﾞ' => 'zu', 'ｾﾞ' => 'ze', 'ｿﾞ' => 'zo',
+            'ﾀﾞ' => 'da', 'ﾁﾞ' => 'ji', 'ﾂﾞ' => 'zu', 'ﾃﾞ' => 'de', 'ﾄﾞ' => 'do',
+            'ﾊﾞ' => 'ba', 'ﾋﾞ' => 'bi', 'ﾌﾞ' => 'bu', 'ﾍﾞ' => 'be', 'ﾎﾞ' => 'bo',
+            'ﾊﾟ' => 'pa', 'ﾋﾟ' => 'pi', 'ﾌﾟ' => 'pu', 'ﾍﾟ' => 'pe', 'ﾎﾟ' => 'po',
+
+            'ﾝｱ' => "n'a", 'ﾝｲ' => "n'i", 'ﾝｳ' => "n'u", 'ﾝｴ' => "n'e", 'ﾝｵ' => "n'o",
+            'ﾝﾔ' => "n'ya", 'ﾝﾕ' => "n'yu", 'ﾝﾖ' => "n'yo",
+
+            // one-char (half-width katakana)
+            'ｱ' => 'a', 'ｲ' => 'i', 'ｳ' => 'u', 'ｴ' => 'e', 'ｵ' => 'o',
+            'ｶ' => 'ka', 'ｷ' => 'ki', 'ｸ' => 'ku', 'ｹ' => 'ke', 'ｺ' => 'ko',
+            'ｻ' => 'sa', 'ｼ' => 'shi', 'ｽ' => 'su', 'ｾ' => 'se', 'ｿ' => 'so',
+            'ﾀ' => 'ta', 'ﾁ' => 'chi', 'ﾂ' => 'tsu', 'ﾃ' => 'te', 'ﾄ' => 'to',
+            'ﾅ' => 'na', 'ﾆ' => 'ni', 'ﾇ' => 'nu', 'ﾈ' => 'ne', 'ﾉ' => 'no',
+            'ﾊ' => 'ha', 'ﾋ' => 'hi', 'ﾌ' => 'fu', 'ﾍ' => 'he', 'ﾎ' => 'ho',
+            'ﾏ' => 'ma', 'ﾐ' => 'mi', 'ﾑ' => 'mu', 'ﾒ' => 'me', 'ﾓ' => 'mo',
+            'ﾔ' => 'ya', 'ﾕ' => 'yu', 'ﾖ' => 'yo',
+            'ﾗ' => 'ra', 'ﾘ' => 'ri', 'ﾙ' => 'ru', 'ﾚ' => 're', 'ﾛ' => 'ro',
+            'ﾜ' => 'wa', 'ｦ' => 'o', 'ﾝ' => 'n'
+        ));
+    }
+
+    /**
+     * romanize
+     */
+    static public function romanize($name, $tsu='', $replace=null) {
+        if ($replace) {
+            $name = strtr($name, $replace);
+        }
+        if ($tsu) {
+            $name = preg_replace('/'.$tsu.'(.)/u', '$1$1', $name);
+        }
+        return str_replace('nb', 'mb', $name);
+    }
+
+    /**
+     * get list of action times
+     */
+    static public function get_restore_types() {
+        return array(
+            'default' => get_string('default', 'grades'),
+            'ignore' => get_string('ignore', 'grades'),
+            'username' => get_string('username', 'moodle'),
+            'fullnameuser' => get_string('fullnameuser', 'moodle'), // User full name
+            'groupname' => get_string('groupname', 'group'),
+            'activityname' => get_string('basicltiname', 'lti'), // Moodle >= 2.2
+            'coursename' => get_string('coursename', 'grades'),
+        );
+    }
+
 }
