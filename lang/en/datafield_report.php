@@ -87,7 +87,7 @@ $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
 *   CURRENT_USER
-:   the id of the user who is viewing the curent record
+:   the id of the user who is viewing the current record
 
 *   RECORD_USER
 :   the id of the user who created the current record
@@ -105,17 +105,17 @@ $string['reportfieldfunctions'] = '
 :   the id of the current course
 
 *   CURRENT_USERS
-:   an array of userids of student sand teachers that the current user can interact with in the current course
+:   an array of student user ids and teachers that the current user can interact with in the current course
 :   If the database activity is using separate groups, this list contains only the users in groups to which the current user belongs.
 
 *   CURRENT_STUDENTS
-:   an array of userids of students that the current user can interact with in the current course
+:   an array of student user ids that the current user can interact with in the current course
 
 *   CURRENT_TEACHERS
-:   an array of userids of teachers that the current user can interact with in the current course
+:   an array of teacher user ids that the current user can interact with in the current course
 
 *   CURRENT_GROUPS
-:   an array of groupids that the current user belongs to in the current course
+:   an array of group ids that the current user belongs to in the current course
 
 *   DEFAULT_NAME_FORMAT
 :   the default name format for the current language
@@ -129,34 +129,34 @@ $string['reportfieldfunctions'] = '
 :   return an array of values
 
 *   GET_FIELD(field, database=CURRENT_DATABASE)
-:   return a single fieldid
+:   return a single field id
 
 *   GET_RECORD(database=CURRENT_DATABASE, field, value)
-:   return a single recordid
+:   return a single record id
 
 *   GET_RECORDS(database=CURRENT_DATABASE, field, value)
-:   return an array of recordids
+:   return an array of record ids
 
 *   GET_USER_RECORD(database=CURRENT_DATABASE, user=CURRENT_USER)
-:   return a single recordid
+:   return a single record id
 
 *   GET_USER_RECORDS(database=CURRENT_DATABASE, user=CURRENT_USER)
-:   return an array of recordids
+:   return an array of record ids
 
 *   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
-:   return a single dataid
+:   return a single dataid (i.e. the id of a record in the "data" table)
 
 *   GET_GROUP(group=CURRENT_GROUPS, course=CURRENT_COURSE)
-:   return a single groupid
+:   return a single group id
 
 *   GET_GROUPS(group=CURRENT_GROUPS, course=CURRENT_COURSE)
-:   return an array of groupids
+:   return an array of group ids
 
 *   GET_GROUP_USERS(group=CURRENT_GROUPS, course=CURRENT_COURSE)
-:   return an array of userids
+:   return an array of user ids
 
 *   GET_COURSE_USERS(course=CURRENT_COURSE)
-:   return an array of userids
+:   return an array of user ids
 
 *   GET_ACTIVE_USERS(database=CURRENT_DATABASE, groups=CURRENT_GROUP, countfield="", menulength=5)
 :   return an array of userids (including current user)
@@ -168,7 +168,7 @@ $string['reportfieldfunctions'] = '
 #### Functions to format ids and values for output
 
 *   USER(format=DEFAULT_NAME_FORMAT, userid=CURRENT_USER)
-:   return the formatted user name of the specified user
+:   return the name of the specified user in the specified format
 
 *   USERS(format=DEFAULT_NAME_FORMAT, userids=CURRENT_USERS)
 :   return an array of formatted user names
@@ -295,6 +295,11 @@ $string['reportfieldfunctions'] = '
     -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH"
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
+
+*   when matching the name of a database, field, course, group or user, the following special characters can be used:
+:   an asterisk, "*", matches any string of characters, including no characters.
+:   a caret, "^", matches the beginning of the string
+:   a dollar sign, "$", matches the end of the string
 ';
 $string['restoretype_help'] = 'This setting signifies how to handle values imported during a "restore" or "Import entries" operation.
 

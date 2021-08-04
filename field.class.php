@@ -336,7 +336,21 @@ class data_field_report extends data_field_base {
         if ($value === false) {
             $value = '';
         }
-    	return parent::update_content_import($recordid, $value, $formfieldid);
+        
+        $params = array(
+            'fieldid' => $this->field->id,
+            'recordid' => $recordid
+        );
+        if ($content = $DB->get_record('data_content', $params)) {
+            if (strcmp($content->content, $value)) {
+                $content->content = $value;
+                $DB->update_record('data_content', $content);
+            }
+        } else {
+            $content = (object)$params;
+            $content->content = $value;
+            $content->id = $DB->insert_record('data_content', $content);
+        }
     }
 
 
