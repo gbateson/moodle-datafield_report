@@ -30,5 +30,5 @@ defined('MOODLE_INTERNAL') || die();
 $plugin->component    = 'datafield_report';
 $plugin->dependencies = array('datafield_admin' => ANY_VERSION);
 $plugin->requires     = 2012062500; // Moodle 2.3
-$plugin->version      = 2021080434;
-$plugin->release      = '2021-08-04 (34)';
+$plugin->version      = 2021080535;
+$plugin->release      = '2021-08-05 (35)';
