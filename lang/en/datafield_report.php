@@ -37,13 +37,13 @@ $string['extraformat_help'] = 'An additional format for this field that may be u
 AJAX calls can be made to the following script, using the parameters given below
 
 * mod/data/field/report/field.ajax.php
-  * **sesskey:** the session key for the current user (available via TMP->get_sesskey())
-  * **d**: database id (available via TMP.get_url_param("d"))
+  * **sesskey:** the session key for the current user (available via JS->get_sesskey())
+  * **d**: database id (available via JS.get_url_param("d"))
   * **f**: database field name
   * **p**: parameter name (1 - 5, param1 - param5, "input", "output", "add", "edit", or "view", extra1 - extra3)
   * **uid**: an optional user id that may be needed to generate the AJAX output
 
-You can then initiate the AJAX call using the TMP.ajax object, thus:
+You can then initiate the AJAX call using the JS.ajax object, thus:
 
     var url = document.location.href;
     url.replace(
@@ -51,13 +51,13 @@ You can then initiate the AJAX call using the TMP.ajax object, thus:
         "$1/field/report/field.ajax.php"
     );
     var data = {
-        "sesskey": TMP->get_sesskey(),
-        "d": TMP.get_url_param("d"),
+        "sesskey": JS->get_sesskey(),
+        "d": JS.get_url_param("d"),
         "f": "somefieldname",
         "p": "extra1",
         "uid": "somevalue"
     };
-    TMP.ajax.post(url, data, function(responsetext){
+    JS.ajax.post(url, data, function(responsetext){
         // do something with responsetext
     });
 ';
