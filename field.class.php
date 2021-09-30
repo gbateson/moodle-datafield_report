@@ -551,6 +551,12 @@ class data_field_report extends data_field_base {
                         }
                         return preg_replace('/\{\$a->(\w+)\}/', '$1', $format);
 
+                    case 'NEXT_DATABASE':
+                        return $this->find_cm($recordid, array(), 1);
+
+                    case 'PREVIOUS_DATABASE':
+                        return $this->find_cm($recordid, array(), -1);
+
                     default:
                         return 'Unknown constant: '.$argument->value;
                 }
@@ -560,18 +566,64 @@ class data_field_report extends data_field_base {
         return null;
     }
 
-    protected function compute_previous($recordid, $arguments) {
+    protected function compute_next($recordid, $arguments) {
+        return $this->find_cm($recordid, $arguments, 1);
+    }
+
+    protected function compute_prev($recordid, $arguments) {
         return $this->find_cm($recordid, $arguments, -1);
     }
 
-    protected function compute_next($recordid, $arguments) {
-        return $this->find_cm($recordid, $arguments, 1);
+    protected function compute_previous($recordid, $arguments) {
+        return $this->find_cm($recordid, $arguments, -1);
     }
 
     protected function find_cm($recordid, $arguments, $type) {
         global $CFG;
 
-        if ($activityname = $this->compute($recordid, array_shift($arguments))) {
+        static $plugins = null;
+        if ($plugins === null) {
+            if (class_exists('core_plugin_manager')) {
+                // Moodle >= 2.6
+                // "/lib/classes/plugin_manager.php" will be included automatically
+                $plugins = core_plugin_manager::instance()->get_plugins_of_type('mod');
+            } else if (class_exists('plugin_manager')) {
+                // Moodle >= 2.1 - 2.5
+                require_once($CFG->dirroot.'/lib/pluginlib.php');
+                $plugins = plugin_manager::instance()->get_plugins();
+                $plugins = $plugins['mod'];
+            }
+        }
+
+        // We expect 2 arguments: a modname and an activityname.
+        // Both are optional and we can accept them in any order.
+        // i.e. all of the following are valid:
+        //   PREVIOUS()
+        //   PREVIOUS("data")
+        //   PREVIOUS("data", "Project 1:*")
+        //   PREVIOUS("Project 1:*")
+        //   PREVIOUS("Project 1:*", "")
+        //   PREVIOUS("Project 1:*", "data")
+        //   PREVIOUS("", "data")
+        //   PREVIOUS("", "Project 1:*")
+
+        // Set the default values for the arguments.
+        $modname = 'data';
+        $activityname = '';
+
+        // Override defaults with specified arguments, if any.
+        for ($i=1; $i<=2; $i++) {
+            if ($arg = $this->compute($recordid, array_shift($arguments))) {
+                if (array_key_exists($arg, $plugins)) {
+                    $modname = $arg;
+                } else {
+                    $activityname = $arg;
+                }
+            }
+        }
+
+        // Convert activity name to PREG pattern.
+        if ($activityname) {
             $replacements = array('^' => 'START_OF_STRING',
                                   '*' => 'ANY_CHARS',
                                   '.' => 'SINGLE_CHARS',
@@ -585,12 +637,6 @@ class data_field_report extends data_field_base {
                                   'SINGLE_CHARS' => '.',
                                   'END_OF_STRING' => '$');
             $activityname = strtr($activityname, $replacements);
-        } else {
-            $activityname = '';
-        }
-
-        if (! $modname = $this->compute($recordid, array_shift($arguments))) {
-            $modname = 'data';
         }
 
         $found = false;
@@ -618,7 +664,7 @@ class data_field_report extends data_field_base {
                 }
             }
         }
-        return 0; // We couldn't find a matching "next" activity.
+        return 0; // We couldn't find a matching activity.
     }
 
     /**
@@ -1923,9 +1969,9 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_score
-     * SCORE_LIST(field, records)
+     * score
      *
+     * @param string $scoretype ("sum", "avg", "min", "max")
      * @param integer $recordid
      * @param array $arguments
      * @return integer

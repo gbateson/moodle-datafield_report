@@ -175,7 +175,7 @@ class datafield_report_observer_userids {
 
             $dirpath = $restore->get_controller()->get_plan()->get_basepath();
             $filename = 'users.xml';
-            $filepath =  "$dirpath/$filename";
+            $filepath =  rtrim($dirpath, '/').'/'.$filename;
 
             if (is_dir($dirpath) && file_exists($filepath)) {
 
@@ -183,6 +183,15 @@ class datafield_report_observer_userids {
                 $remove_filepath = false;
 
             } else if (check_dir_exists($dirpath, true, true)) {
+
+                // ===========================================================
+                // This method only works to restore files that were uploaded
+                // at the time of the restore.
+                // It does NOT work when restoring files from a "backup area".
+                // -----------------------------------------------------------
+                // The workaround is to download a file from the backup area,
+                // and then upload it again using "Import a backup file"
+                // ===========================================================
 
                 // file does not exist, so we create it and then remove it later
                 $remove_filepath = true;
@@ -201,6 +210,7 @@ class datafield_report_observer_userids {
                                 'mimetype' => 'application/vnd.moodle.backup');
 
                 if ($file = $DB->get_records_select('files', $select, $params, 'timecreated DESC', '*', 0, 1)) {
+
                     $file = reset($file);
                     $file = get_file_storage()->get_file($file->contextid,
                                                          $file->component,

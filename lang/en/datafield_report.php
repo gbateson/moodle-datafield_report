@@ -207,11 +207,15 @@ $string['reportfieldfunctions'] = '
 *   LIST(values, listtype)
 :   return the values formatted as an HTML list depending on the listtype ("UL", "OL" or "DL")
 
-*   COUNT_LIST(field, records)
+*   COUNT_LIST(records)
 :   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values.
 
-*   SCORE_LIST(field, records)
+*   SCORE_LIST(field, records, valuetype)
 :   return an HTML list in which each value is preceded by information on how many times that value occurs, the number of points awarded for each occurence of the value, and the total number of points awarded. Under the list appears information about the total number of points awarded, the total number of occurences, and the average number of points awarded per occurrence. 
+:   The "valuetype" parameter can be one of the following:
+    * "ASC": the ascending position of the item in the list. In other words, the first item is worth one point and every other item is worth one more point than the item *before* it in the list.
+    * "DESC": the descending position of the item in the list. In other words, the last item is worth one point and every other item is worth one more point than the item *after* it in the list.
+    * "LITERAL": each item begins with an integer that shows the point value of the item.
 
 #### Functions to reduce an array to a single item
 
