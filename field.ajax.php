@@ -79,4 +79,23 @@ switch ($action) {
         }
         die;
         break;
+
+    case 'checkrecordsexist':
+        if ($fieldname = optional_param('f', '', PARAM_ALPHANUM)) {
+            $param = optional_param('p', '', PARAM_ALPHANUM);
+            $recordid = optional_param('rid', 0, PARAM_INT);
+            // optional_param('uid', $USER->id, PARAM_INT);
+            if ($field = data_get_field_from_name($fieldname, $instance)) {
+                $records = $field->display_field($recordid, $param);
+                $records = json_decode($records);
+                // add records to the target database using the JSON info
+                // e.g. [["presenter_name" : "presenter name 1"], ["presenter_name" : "presenter name 1"]]
+                foreach ($records as $record) {
+                    // TODO: check that this record exists.
+                    // If it doesn't exist, then add it.
+                }
+            }
+        }
+        die;
+        break;
 }

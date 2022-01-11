@@ -40,7 +40,7 @@ AJAX calls can be made to the following script, using the parameters given below
   * **sesskey:** the session key for the current user (available via JS->get_sesskey())
   * **d**: database id (available via JS.get_url_param("d"))
   * **f**: database field name
-  * **p**: parameter name (1 - 5, param1 - param5, "input", "output", "add", "edit", or "view", extra1 - extra3)
+  * **p**: parameter name (1 - 4, param1 - param4, "input", "output", "add", "edit", or "view", extra1 - extra2)
   * **uid**: an optional user id that may be needed to generate the AJAX output
 
 You can then initiate the AJAX call using the JS.ajax object, thus:
@@ -86,11 +86,11 @@ $string['reportfieldintroduction'] = 'On this page, you can define the rules to 
 $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
-*   CURRENT_USER
-:   the id of the user who is viewing the current record
-
 *   RECORD_USER
 :   the id of the user who created the current record
+
+*   CURRENT_USER
+:   the id of the user who is viewing the current record
 
 *   CURRENT_RECORD
 :   the id of the current record
@@ -98,11 +98,23 @@ $string['reportfieldfunctions'] = '
 *   CURRENT_RECORDS
 :   an array of the ids of records created by the current user in the current database
 
+*   CURRENT_COURSE
+:   the id of the current course
+
 *   CURRENT_DATABASE
 :   the id of the current database activity
 
-*   CURRENT_COURSE
-:   the id of the current course
+*   NEXT_DATABASE
+:   the id of the database activity that appears *after* the current database in the current course
+
+*   PREVIOUS_DATABASE
+:   the id of the database activity that appears *before* the current database in the current course
+
+*   CURRENT_GROUP
+:   the currently selected group within this activity
+
+*   CURRENT_GROUPS
+:   an array of group ids that the current user belongs to in the current course/activity
 
 *   CURRENT_USERS
 :   an array of student user ids and teachers that the current user can interact with in the current course
@@ -113,9 +125,6 @@ $string['reportfieldfunctions'] = '
 
 *   CURRENT_TEACHERS
 :   an array of teacher user ids that the current user can interact with in the current course
-
-*   CURRENT_GROUPS
-:   an array of group ids that the current user belongs to in the current course
 
 *   DEFAULT_NAME_FORMAT
 :   the default name format for the current language
@@ -238,7 +247,7 @@ $string['reportfieldfunctions'] = '
 :   return the sum of the values
 
 *   UNIQUE(values)
-:   return a sorted list in ascending (sortdirection=ASC) or descending (sortdirection=DESC) order
+:   return a list of unique values, i.e. with all duplicates removed 
 
 *   CONCAT(value1, value2, ...)
 :   return a long string produced by concatenating the values together
@@ -266,6 +275,12 @@ $string['reportfieldfunctions'] = '
 *   SCORE_SUM(field, records=CURRENT_RECORD)
 :   shortcut for SCORE("sum", field, records=CURRENT_RECORD)
 
+*   TOTAL(totaltype, fields, records=CURRENT_RECORD)
+:   return the total score for the selected records.
+:   the "totaltype" can be one of the following: avg, max, min, sum
+:   "fields" is a string containing a comma-separated list of fields
+:   the total score is calculated as the aggregate score for the specified fields.
+
 #### Arguments for functions
 
 *   "field" can be one of the following:
@@ -278,8 +293,9 @@ $string['reportfieldfunctions'] = '
 :   id=99 a course module id number
 :   cmid=99 a course module id number
 :   a string that matches the name of database in the specified course
-:   NEXT(name string or activity type) e.g. NEXT(DATABASE), NEXT("*Feedback*")
-:   PREVIOUS(name string or activity type)
+:   NEXT(activity type or name string) e.g. NEXT(), NEXT("data"), NEXT("*Feedback*")
+:   PREV(activity type or name string) e.g. PREV(), PREV("data"), PREV("*Presentation*")
+:   PREVIOUS(activity type or name string) an alias for the "PREV()" function
 
 *   "course" can be one of the following:
 :   a course id number

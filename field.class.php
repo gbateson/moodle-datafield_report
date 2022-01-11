@@ -108,7 +108,6 @@ class data_field_report extends data_field_base {
             case '2':
             case '3':
             case '4':
-            case '5':
                 $param = 'param'.$template;
                 break;
 
@@ -116,7 +115,6 @@ class data_field_report extends data_field_base {
             case 'param2':
             case 'param3':
             case 'param4':
-            case 'param5':
                 $param = $template;
                 break;
 
@@ -125,9 +123,6 @@ class data_field_report extends data_field_base {
                 break;
             case 'extra2':
                 $param = 'param4';
-                break;
-            case 'extra3':
-                $param = 'param5';
                 break;
 
             case 'add':
@@ -169,10 +164,6 @@ class data_field_report extends data_field_base {
                 case 'EXTRA2':
                 case 'PARAM4':
                     $param = 'param4';
-                    break;
-                case 'EXTRA3':
-                case 'PARAM5':
-                    $param = 'param5';
                     break;
             }
         }
@@ -517,11 +508,17 @@ class data_field_report extends data_field_base {
                         $params = array('dataid' => $$this->data->id, 'userid' => $USER->id);
                         return $DB->get_records_menu('data_records', $params, 'id', 'id,userid');
 
+                    case 'CURRENT_COURSE':
+                        return $this->data->course;
+
                     case 'CURRENT_DATABASE':
                         return $this->data->id;
 
-                    case 'CURRENT_COURSE':
-                        return $this->data->course;
+                    case 'PREVIOUS_DATABASE':
+                        return $this->find_cm($recordid, array(), -1);
+
+                    case 'NEXT_DATABASE':
+                        return $this->find_cm($recordid, array(), 1);
 
                     case 'CURRENT_GROUP':
                         return groups_get_activity_group($this->cm);
@@ -542,20 +539,24 @@ class data_field_report extends data_field_base {
                                                $this->valid_teacherids());
 
                     case 'DEFAULT_NAME_FORMAT':
-                        $format = '';
-                        if (isset($CFG->fullnamedisplay)) {
+                        if (empty($CFG->fullnamedisplay)) {
+                            $format = '';
+                        } else {
                             $format = $CFG->fullnamedisplay;
                         }
-                        if (empty($format) || $format == 'language') {
+                        if ($format == '' || $format == 'language') {
                             $format = get_string('fullnamedisplay');
                         }
                         return preg_replace('/\{\$a->(\w+)\}/', '$1', $format);
 
-                    case 'NEXT_DATABASE':
-                        return $this->find_cm($recordid, array(), 1);
+                    case 'MUST_EXIST':
+                    case 'CREATE_MISSING':
+                    case 'CREATE_MISSING_RECORDS':
+                        return 1;
 
-                    case 'PREVIOUS_DATABASE':
-                        return $this->find_cm($recordid, array(), -1);
+                    case 'IGNORE_MISSING':
+                    case 'IGNORE_MISSING_RECORDS':
+                        return 0;
 
                     default:
                         return 'Unknown constant: '.$argument->value;
@@ -743,7 +744,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_user_record
-     * GET_USER_RECORD(database, user)
+     * GET_USER_RECORD(database, user, fieldvalues=null)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -755,7 +756,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_user_records
-     * GET_USER_RECORDS(database, users)
+     * GET_USER_RECORDS(database, users, fieldvalues=IGNORE_MISSING_RECORDS)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -767,10 +768,11 @@ class data_field_report extends data_field_base {
         global $DB, $USER;
         if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
             if ($users = $this->compute($recordid, array_shift($arguments), $default)) {
+                $fieldvalues = $this->compute($recordid, array_shift($arguments), 'IGNORE_MISSING_RECORDS');
                 if (is_scalar($users)) {
                     $users = array($users);
                 }
-                return $this->valid_user_recordids($database, $users, $multiple);
+                return $this->valid_user_recordids($database, $users, $multiple, $fieldvalues);
             }
         }
         return null;
@@ -1135,12 +1137,27 @@ class data_field_report extends data_field_base {
             $format = '';
         }
 
-        // replace ENGLISH|JAPANESE NAME
+        // Expand two-letter language codes.
         $format = preg_replace_callback(
-            '/\b([A-Z]+)_NAME\b/i',
-            function($matches) use ($user) {
-                $name = $matches[0];
-                switch ($matches[1]) {
+            '/\b(?:NAME_)?([A-Z]{2})\b/',
+            function($match) {
+                switch ($match[1]) {
+                    case 'EN': return 'ENGLISH';
+                    case 'JA': return 'JAPANESE';
+                    case 'KO': return 'KOREAN';
+                    case 'ZH': return 'CHINESE';
+                    default: return $match[0];
+                }
+            },
+            $format
+        );
+
+        // replace (ENGLISH|JAPANESE)_NAME
+        $format = preg_replace_callback(
+            '/\b([A-Z]+)(_NAME)?\b/i',
+            function($match) use ($user) {
+                $name = $match[0];
+                switch ($match[1]) {
                     case 'ENGLISH':
                     case 'INTERNATIONAL':
                     case 'LOWASCII':
@@ -1152,6 +1169,7 @@ class data_field_report extends data_field_base {
                         if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
                             return 'Firstnamephonetic LASTNAMEPHONETIC';
                         }
+                        // Otherwise, try this user's "alternatename" field.
                         $name = preg_replace('/[^ -~]+/', '', $user->alternatename);
                         $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
                         $name = preg_replace('/\s+/', ' ', trim($name));
@@ -1169,6 +1187,7 @@ class data_field_report extends data_field_base {
                         if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
                             return 'lastnamephonetic firstnamephonetic';
                         }
+                        // Otherwise, try this user's "alternatename" field.
                         $name = preg_replace('/[ -~]+/', '', $user->alternatename);
                         $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
                         $name = preg_replace('/\s+/', ' ', trim($name));
@@ -1188,41 +1207,48 @@ class data_field_report extends data_field_base {
             function($matches) use ($user) {
                 $match = $matches[0];
                 $name = strtolower($match);
-                if (isset($user->$name)) {
-                    if ($name == 'first' || $name == 'middle' || $name == 'last' || $name == 'alternate') {
-                        $name .= 'name';
-                    }
-                    $name = $user->$name;
-                    switch (true) {
-                        case preg_match('/^[A-Z]+$/', $match):
-                            $name = mb_convert_case($name, MB_CASE_LOWER);
-                            break;
-                        case preg_match('/^[a-z]+$/', $match):
-                            $name = mb_convert_case($name, MB_CASE_LOWER);
-                            break;
-                        case preg_match('/^[A-Z][a-z]+$/', $match):
-                            $name = mb_convert_case($name, MB_CASE_TITLE);
-                            break;
-                    }
+                if (empty($user->$name)) {
+                    return '';
+                }
+                if ($name == 'first' || $name == 'middle' || $name == 'last' || $name == 'alternate') {
+                    $name .= 'name';
+                }
+                $name = $user->$name;
+                switch (true) {
+                    case preg_match('/^[A-Z]+$/', $match):
+                        $name = mb_convert_case($name, MB_CASE_UPPER);
+                        break;
+                    case preg_match('/^[a-z]+$/', $match):
+                        $name = mb_convert_case($name, MB_CASE_LOWER);
+                        break;
+                    case preg_match('/^[A-Z][a-z]+$/', $match):
+                        $name = mb_convert_case($name, MB_CASE_TITLE);
+                        break;
                 }
                 return $name;
             },
             $format
         );
 
-        // compute name functions (UPPERCASE, ROMANIZE, BRACKETS etc)
+        // compute name functions (UPPERCASE, ROMANIZE, BRACKETS, etc)
         $offset = 0;
-        if ($arguments = $this->parse_arguments($recordid, $format, $offset)) {
-            list($arguments, $offset) = $arguments;
+        list($arguments, $offset) = $this->parse_arguments($recordid, $format, $offset);
+        if (count($arguments)) {
             foreach ($arguments as $a => $argument) {
                 $arguments[$a] = $this->compute($recordid, $argument);
             }
             $format = implode('', $arguments);
         }
 
+        // If the formatting didn't work for some reason,
+        // use Moodle's default name for this user.
         if ($format == '') {
             $format = fullname($user);
         }
+
+        // Remove unnecessary brackets.
+        $format = preg_replace('/ *\(\)/', '', $format);
+        $format = preg_replace('/^ *\((.*)\) *$/', '$1', $format);
 
         return $format;
     }
@@ -1609,7 +1635,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_score_list
-     * SCORE_LIST(field, records)
+     * SCORE_LIST(field, records, valuetype)
      *
      * @param integer $recordid
      * @param array $arguments
@@ -1849,7 +1875,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_score
-     * SCORE_LIST(scoretype, field, records)
+     * SCORE(scoretype, field, records)
      *
      * @param integer $recordid
      * @param array $arguments
@@ -1956,6 +1982,131 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * compute_total
+     * TOTAL(totaltype, fields, records)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return integer
+     */
+    protected function compute_total($recordid, $arguments) {
+
+        $total = 0;
+
+        $totaltype = $this->compute($recordid, array_shift($arguments));
+        $fields = $this->compute($recordid, array_shift($arguments));
+        $records = $this->compute($recordid, array_shift($arguments));
+
+        if (is_string($fields)) {
+
+            $sum = 0;
+            $max = 0;
+            $min = 0;
+            $count = 0;
+
+            $fields = explode(',', $fields);
+            $fields = array_filter($fields);
+            foreach ($fields as $field) {
+
+                list($items, $scores) = $this->get_items_scores($recordid, $field, $records);
+
+                $count += count($scores);
+                switch ($totaltype) {
+                    case 'avg': 
+                    case 'sum': $sum += array_sum($scores); break;
+                    case 'max': $max = max($max, max($scores)); break;
+                    case 'min': $min = min($min, min($scores)); break;
+                }
+            }
+
+            if ($count) {
+                switch ($totaltype) {
+                    case 'avg': $total = round($sum/$count, 1); break; 
+                    case 'sum': $total = $sum; break;
+                    case 'max': $total = $max; break;
+                    case 'min': $total = $min; break;
+                }
+            }
+        }
+        return $total;
+    }
+
+    /**
+     * compute_json
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_json($recordid, $arguments) {
+        if ($json = $this->compute($recordid, array_shift($arguments))) {
+            return json_encode($json);
+        } else {
+            return '';
+        }
+    }
+
+    /**
+     * compute_array
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array of array_items
+     */
+    protected function compute_array($recordid, $arguments) {
+        $array = array();
+        while (count($arguments)) {
+            $item = $this->compute($recordid, array_shift($arguments));
+            if (is_null($item)) {
+                continue;
+            }
+            if (is_scalar($item)) {
+                $key = 0;
+                $value = $item;
+            } else {
+                // an ARRAY_ITEM
+                $key = key($item);
+                $value = reset($item);
+            }
+            if ($key === 0) {
+                $array[] = $value;
+            } else {
+                $array[$key] = $value;
+            }
+        }
+        return $array;
+    }
+
+    /**
+     * compute_array_item
+     * ARRAY_ITEM("a value")
+     * ARRAY_ITEM("a key", "a value")
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array or scalar value
+     */
+    protected function compute_array_item($recordid, $arguments) {
+        // We expect $arguments to be an array containing exactly 1 or 2 items.
+        if (is_array($arguments)) {
+            $count = count($arguments);
+        } else {
+            $count = 0;
+        }
+        if ($count == 0) {
+            return null; // shouldn't happen !!
+        }
+        // Note that the values will be computed later.
+        if ($count == 1) {
+            return array_shift($arguments);
+        } else {
+            $key = $this->compute($recordid, array_shift($arguments));
+            $value = array_shift($arguments);
+            return array($key => $value);
+        }
+    }
+
+    /**
      * format the accessibility label for this field.
      */
     protected function accessibility_label() {
@@ -1998,9 +2149,9 @@ class data_field_report extends data_field_base {
                 break;
 
             case 'avg':
-                $total = array_sum($scores);
                 $text = get_string('averageofvalues', 'datafield_report', $countvalues);
-                $scores = round($total/$count, 1).html_writer::span($text, 'text-muted');
+                $scores = round(array_sum($scores)/$count, 1);
+                $scores = $scores.html_writer::span($text, 'text-muted');
                 break;
 
             case 'min':
@@ -2253,29 +2404,130 @@ class data_field_report extends data_field_base {
     /**
      * valid_user_recordids
      *
-     * @param mixed $field
      * @param mixed $database
+     * @param mixed $users
      * @param boolean $multiple
+     * @param mixed $fieldvalues
      * @return mixed fieldid OR null
      */
-    protected function valid_user_recordids($database, $users, $multiple) {
-        global $DB;
+    protected function valid_user_recordids($database, $users, $multiple, $fieldvalues) {
+        global $DB, $USER;
 
+        // Get a valid $dataid for the the specified database.
         $dataid = $this->valid_dataid($database);
+
+        // Make sure the current user gets a record in the target database.
+        if ($fieldvalues) {
+            $users[] = $USER->id;
+        }
         $userids = $this->valid_userids($database, $users);
+        // $userids holds ids of users to whom the current user has access to
+        // in the current database and who also appear in the $users array
 
-        $ids = array_intersect($users, $userids);
-        if (count($ids)) {
+        if (count($userids)) {
 
-            list($select, $params) = $DB->get_in_or_equal($ids);
+            list($select, $params) = $DB->get_in_or_equal($userids);
             $select = "dataid = ? AND userid $select";
             array_unshift($params, $dataid);
 
-            if ($records = $DB->get_records_select('data_records', $select, $params, 'id', 'id,userid')) {
+            $records = $DB->get_records_select_menu('data_records', $select, $params, 'id', 'id,userid');
+            if (empty($records)) {
+                $records = array();
+            }
+
+            if ($fieldvalues) {
+
+                $groupid = 0;
+                $time = time();
+
+                // Initiallize the $data record to null.
+                // It will be set later, if needed.
+                $data = null;
+
+                foreach ($userids as $userid) {
+                    if (in_array($userid, $records) === false) {
+
+                        if ($data === null) {
+                            // Set up main records (first time only).
+                            $cm = get_coursemodule_from_instance('data', $dataid);
+                            $data = $DB->get_record('data', array('id' => $dataid));
+                            $fields = $DB->get_records_menu('data_fields', array('dataid' => $dataid), 'id', 'id,name');
+
+                            $course = $DB->get_record('course', array('id' => $data->course));
+                            if ($course->groupmodeforce) {
+                                $groupmode = $course->groupmode;
+                            } else {
+                                $groupmode = $cm->groupmode;
+                            }
+                            if ($groupmode == NOGROUPS || $groupmode == VISIBLEGROUPS) {
+                                $accessallusers = true;
+                            } else {
+                                // $groupmode == SEPARATEGROUPS
+                                $context = context_module::instance($cm->id);
+                                $accessallusers = has_capability('moodle/site:accessallgroups', $context);
+                            }
+                        }
+
+                        if ($accessallusers) {
+                            $accessthisuser = true;
+                        } else {
+                            // Check the users have at least one group in common in this course.
+                            $select = 'gm1.id AS id2, gm1.userid AS userid1, gm1.groupid, '.
+                                      'gm2.id AS id2, gm2.userid AS userid2, g.courseid';
+                            $from   = '{groups_members} gm1, {groups_members} gm2, {groups} g';
+                            $where  = 'gm1.userid = ? AND gm1.groupid = gm2.groupid AND '.
+                                      'gm2.userid = ? AND gm2.groupid = g.id AND g.courseid = ?';
+                            $params = array($USER->id, $userid, $data->course);
+                            $accessthisuser = $DB->record_exists_sql("SELECT $select FROM $from WHERE $where", $params);
+                        }
+
+                        if ($accessthisuser) {
+                            $groupid = 0;
+                            if ($groupmode == VISIBLEGROUPS || $groupmode == SEPARATEGROUPS) {
+                                $groups = groups_get_user_groups($data->course, $userid);
+                                if (is_array($groups)) {
+                                    $groups = $groups[0];
+                                    if (is_array($groups)) {
+                                        $groupid = $groups[0];
+                                    }
+                                }
+                            }
+                            $record = (object)array(
+                                'userid' => $userid,
+                                'groupid' => $groupid,
+                                'dataid' => $dataid,
+                                'timecreated' => $time,
+                                'timemodified' => $time,
+                                'approved' => 0,
+                            );
+                            if ($record->id = $DB->insert_record('data_records', $record)) {
+                                foreach ($fields as $fieldid => $fieldname) {
+                                    if (is_array($fieldvalues) && array_key_exists($fieldname, $fieldvalues)) {
+                                        $content = $this->compute($record->id, $fieldvalues[$fieldname]);
+                                    } else {
+                                        $content = '';
+                                    }
+                                    $content = (object)array(
+                                        'recordid' => $record->id,
+                                        'fieldid' => $fieldid,
+                                        'content' => $content
+                                    );
+                                    $content->id = $DB->insert_record('data_content', $content);
+                                }
+                                $records[$record->id] = $userid;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (count($records)) {
                 if ($multiple) {
+                    // Return all record ids.
                     return array_keys($records);
                 } else {
-                    return key($records);
+                    // Return the record id for the original user.
+                    return array_search(reset($users), $records);
                 }
             }
         }
