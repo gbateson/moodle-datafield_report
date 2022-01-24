@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2022-01-24 (41)
+ - add new constants: CURRENT_FIELD, CURRENT_VALUE
+
 2022-01-11 (40)
  - add new parameter to GET_USER_RECORD function that will, if necessary, force the creation of a record in the target database
 

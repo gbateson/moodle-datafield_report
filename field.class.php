@@ -498,6 +498,13 @@ class data_field_report extends data_field_base {
                             return $DB->get_field('data_records', 'userid', array('id' => $recordid));
                         }
 
+                    case 'CURRENT_VALUE':
+                        $params = array('recordid' => $recordid, 'fieldid' => $this->field->id);
+                        return $DB->get_field('data_content', 'content', $params);
+
+                    case 'CURRENT_FIELD':
+                        return $this->field->id;
+
                     case 'CURRENT_USER':
                         return $USER->id;
 
@@ -505,7 +512,7 @@ class data_field_report extends data_field_base {
                         return $recordid;
 
                     case 'CURRENT_RECORDS':
-                        $params = array('dataid' => $$this->data->id, 'userid' => $USER->id);
+                        $params = array('dataid' => $this->data->id, 'userid' => $USER->id);
                         return $DB->get_records_menu('data_records', $params, 'id', 'id,userid');
 
                     case 'CURRENT_COURSE':
@@ -666,6 +673,31 @@ class data_field_report extends data_field_base {
             }
         }
         return 0; // We couldn't find a matching activity.
+    }
+
+    /**
+     * compute_rating 
+     * RATING(user=CURRENT_USER, database=CURRENT_DATABASE)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return float a rating value
+     */
+    protected function compute_rating($recordid, $arguments) {
+        global $DB;
+        // NOTE: this function is not finished yet and does nothing
+        $userid = 0;
+        $dataid = 0;
+        if ($user = $this->compute($recordid, array_shift($arguments), 'CURRENT_USER')) {
+            if ($userid = $this->valid_userids($user)) {
+                $userid = reset($userid);
+            }
+        }
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            $dataid = $this->valid_dataid($database);
+        }
+        // see "get_recordrating()" in mod/data/field/template/field.class.php
+        return null;
     }
 
     /**
@@ -1011,7 +1043,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_my_group_userids
-     * MY_GROUP_USERIDS()
+     * MY_GROUP_USERIDS(group)
      *
      * @param array $arguments
      * @return string
@@ -1438,7 +1470,7 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_LINK
+     * compute_link
      * LINK(url)
      *
      * @param integer $recordid
