@@ -93,7 +93,7 @@ class datafield_report_observer {
         $params = array('dataid' => $data->id, 'type' => 'report');
         if ($fields = $DB->get_records('data_fields', $params)) {
 
-            // check to see if se are doing a restore (usualy we are)
+            // Check to see if we are doing a restore (usualy we are)
             $restoreid = optional_param('restore', false, PARAM_ALPHANUM);
 
             $useridfields = array();

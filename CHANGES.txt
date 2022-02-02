@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2022-02-02 (42)
+ - refine GET_USER_RECORD function to create multiple records if necessary
+
 2022-01-24 (41)
  - add new constants: CURRENT_FIELD, CURRENT_VALUE
 
@@ -21,7 +24,7 @@ Change log for datafield_report
  - reuse param5 to specify how field content should be handled during import/export andbackup/restore
 
 2021-05-21 (32)
- - add NEXT and PREVIOUS function to locate target database reletive to current database in the course.
+ - add NEXT and PREVIOUS function to locate target database relative to current database in the course.
 
 2021-05-14 (30)
  - fix error arising from array_rand() return a scalr value sometimes
@@ -39,7 +42,7 @@ Change log for datafield_report
  - add aggregate functions: AVG, SUM, MIN, MAX, CONCAT, JOIN, MERGE
 
 2020-09-07 (23)
- - add new constant 'RECORD_USER' to distinguish from CURRENT_USER when adding/editing new record
+ - add new constant RECORD_USER to distinguish from CURRENT_USER when adding/editing new record
 
 2020-09-03 (22)
  - fix wording of some lang strings and add 'required' field to mod.html

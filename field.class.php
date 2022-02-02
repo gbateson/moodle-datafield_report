@@ -327,7 +327,7 @@ class data_field_report extends data_field_base {
         if ($value === false) {
             $value = '';
         }
-        
+
         $params = array(
             'fieldid' => $this->field->id,
             'recordid' => $recordid
@@ -556,15 +556,6 @@ class data_field_report extends data_field_base {
                         }
                         return preg_replace('/\{\$a->(\w+)\}/', '$1', $format);
 
-                    case 'MUST_EXIST':
-                    case 'CREATE_MISSING':
-                    case 'CREATE_MISSING_RECORDS':
-                        return 1;
-
-                    case 'IGNORE_MISSING':
-                    case 'IGNORE_MISSING_RECORDS':
-                        return 0;
-
                     default:
                         return 'Unknown constant: '.$argument->value;
                 }
@@ -676,7 +667,7 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_rating 
+     * compute_rating
      * RATING(user=CURRENT_USER, database=CURRENT_DATABASE)
      *
      * @param array $arguments
@@ -788,7 +779,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_user_records
-     * GET_USER_RECORDS(database, users, fieldvalues=IGNORE_MISSING_RECORDS)
+     * GET_USER_RECORDS(database, users, fieldvalues)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -797,17 +788,73 @@ class data_field_report extends data_field_base {
      * @return array
      */
     protected function compute_get_user_records($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
-        global $DB, $USER;
         if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
             if ($users = $this->compute($recordid, array_shift($arguments), $default)) {
-                $fieldvalues = $this->compute($recordid, array_shift($arguments), 'IGNORE_MISSING_RECORDS');
                 if (is_scalar($users)) {
                     $users = array($users);
                 }
-                return $this->valid_user_recordids($database, $users, $multiple, $fieldvalues);
+                $fieldvalues = $this->compute($recordid, array_shift($arguments));
+                return $this->valid_user_recordids($recordid, $database, $users, $multiple, $fieldvalues);
             }
         }
         return null;
+    }
+
+    /**
+     * compute_get_user_records_menu
+     * GET_USER_RECORDS_MENU(database, users, fieldvalues, conditions, returnfield)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param mixed $default users
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
+     * @return array
+     */
+    protected function compute_get_user_records_menu($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
+        global $DB;
+
+        $recordids = $this->compute_get_user_records($recordid, $arguments, $default, $multiple);
+        if (count($recordids)) {
+
+            $conditions = $this->compute($recordid, array_shift($arguments));
+            $returnfield = $this->compute($recordid, array_shift($arguments));
+
+            $params = array('dataid' => $dataid);
+            $fields = $DB->get_records_menu('data_fields', $params, '', 'name,id');
+
+            if (is_array($fields) && in_array($returnfield, $fields)) {
+
+                $i = 0;
+                $alias = 'dc'.(++$i);
+
+                $select = "$alias.recordid, $alias.content";
+                $from   = array('{data_content} '.$alias);
+
+                list($where, $params) = $DB->get_in_or_equal($recordids);
+                $where = array("$alias.recordid $where");
+                $where[] = "$alias.fieldid = ?";
+                $params[] = $fields[$returnfield];
+
+                foreach ($conditions as $fieldname => $value) {
+                    if (in_array($fieldname, $fields)) {
+                        $alias = 'dc'.(++$i);
+                        array_push($from, '{data_content} '.$alias);
+                        array_push($where, "dc1.recordid = $alias.recordid",
+                                           "$alias.fieldid = ?",
+                                           "$alias.content = ?");
+                        array_push($params, $fields[$fieldname], $value);
+                    }
+                }
+
+                $from = implode(', ', $from);
+                $where = implode(' AND ', $where);
+                $records = "SELECT $select FROM $from WHERE $where";
+                if ($records = $DB->get_records_sql_menu($records, $params)) {
+                    return $records;
+                }
+            }
+        }
+        return array();
     }
 
     /**
@@ -835,6 +882,7 @@ class data_field_report extends data_field_base {
      */
     protected function compute_get_active_users($recordid, $arguments, $default='CURRENT_GROUP', $excludeme=false) {
         global $DB, $USER;
+
         // get the target database (typically, this is NOT the current database)
         if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
 
@@ -889,6 +937,7 @@ class data_field_report extends data_field_base {
                     $from   = '{data_content} dc LEFT JOIN {data_records} dr ON dc.recordid = dr.id';
                     $group  = 'dc.content';
                     if ($ids = $DB->get_records_sql_menu("SELECT $select FROM $from WHERE $where GROUP BY $group", $params)) {
+
                         $userids = array(0 => array_fill_keys($userids, 0));
                         foreach ($ids as $id => $count) {
                             unset($userids[0][$id]);
@@ -929,7 +978,7 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * compute_get_record
+     * compute_get_value
      * GET_VALUE(field, record)
      *
      * @param array $arguments
@@ -1854,8 +1903,8 @@ class data_field_report extends data_field_base {
      */
     protected function compute_concat($recordid, $arguments) {
         $items = array();
-        while ($item = $this->compute($recordid, array_shift($arguments))) {
-            $items[] = $item;
+        while (count($arguments)) {
+            $items[] = $this->compute($recordid, array_shift($arguments));
         }
         if (empty($items)) {
             return '';
@@ -1892,7 +1941,8 @@ class data_field_report extends data_field_base {
      */
     protected function compute_merge($recordid, $arguments) {
         $merge = array();
-        while ($items = $this->compute($recordid, array_shift($arguments))) {
+        while (count($arguments)) {
+            $items = $this->compute($recordid, array_shift($arguments));
             if (empty($items)) {
                 continue;
             }
@@ -2044,7 +2094,7 @@ class data_field_report extends data_field_base {
 
                 $count += count($scores);
                 switch ($totaltype) {
-                    case 'avg': 
+                    case 'avg':
                     case 'sum': $sum += array_sum($scores); break;
                     case 'max': $max = max($max, max($scores)); break;
                     case 'min': $min = min($min, min($scores)); break;
@@ -2053,7 +2103,7 @@ class data_field_report extends data_field_base {
 
             if ($count) {
                 switch ($totaltype) {
-                    case 'avg': $total = round($sum/$count, 1); break; 
+                    case 'avg': $total = round($sum/$count, 1); break;
                     case 'sum': $total = $sum; break;
                     case 'max': $total = $max; break;
                     case 'min': $total = $min; break;
@@ -2411,21 +2461,20 @@ class data_field_report extends data_field_base {
     protected function valid_recordids($database, $field, $value, $multiple) {
         global $DB;
 
-        $fieldid = $this->valid_fieldid($database, $field);
-
-        list($select, $params) = $DB->get_in_or_equal($fieldid);
-        $select = "fieldid $select AND content = ?";
-        array_push($params, $value);
-
-        if ($records = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,recordid')) {
-            if ($multiple) {
-                return array_values($records);
-            } else {
-                return reset($records);
+        if ($fieldid = $this->valid_fieldid($database, $field)) {
+            $select = 'fieldid = ? AND '.$DB->sql_compare_text('content').' = ?';
+            $params = array($fieldid, $value);
+            $records = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,recordid');
+            if ($records) {
+                if ($multiple) {
+                    return array_values($records);
+                } else {
+                    return reset($records);
+                }
             }
         }
 
-        // Oops, no record found :-(
+        // Oops, invalid field or no records found :-(
         if ($multiple) {
             return array();
         } else {
@@ -2436,26 +2485,22 @@ class data_field_report extends data_field_base {
     /**
      * valid_user_recordids
      *
+     * @param integer $recordid
      * @param mixed $database
      * @param mixed $users
      * @param boolean $multiple
      * @param mixed $fieldvalues
-     * @return mixed fieldid OR null
+     * @return mixed 
      */
-    protected function valid_user_recordids($database, $users, $multiple, $fieldvalues) {
+    protected function valid_user_recordids($recordid, $database, $users, $multiple, $fieldvalues) {
         global $DB, $USER;
 
         // Get a valid $dataid for the the specified database.
         $dataid = $this->valid_dataid($database);
 
-        // Make sure the current user gets a record in the target database.
-        if ($fieldvalues) {
-            $users[] = $USER->id;
-        }
         $userids = $this->valid_userids($database, $users);
         // $userids holds ids of users to whom the current user has access to
-        // in the current database and who also appear in the $users array
-
+        // in the specified database and who also appear in the $users array
         if (count($userids)) {
 
             list($select, $params) = $DB->get_in_or_equal($userids);
@@ -2475,6 +2520,7 @@ class data_field_report extends data_field_base {
                 // Initiallize the $data record to null.
                 // It will be set later, if needed.
                 $data = null;
+                $fields = array();
 
                 foreach ($userids as $userid) {
                     if (in_array($userid, $records) === false) {
@@ -2483,7 +2529,8 @@ class data_field_report extends data_field_base {
                             // Set up main records (first time only).
                             $cm = get_coursemodule_from_instance('data', $dataid);
                             $data = $DB->get_record('data', array('id' => $dataid));
-                            $fields = $DB->get_records_menu('data_fields', array('dataid' => $dataid), 'id', 'id,name');
+                            $fields = $DB->get_records('data_fields', array('dataid' => $dataid), 'id', 'id,name,type');
+                            $context = context_module::instance($cm->id);
 
                             $course = $DB->get_record('course', array('id' => $data->course));
                             if ($course->groupmodeforce) {
@@ -2495,7 +2542,6 @@ class data_field_report extends data_field_base {
                                 $accessallusers = true;
                             } else {
                                 // $groupmode == SEPARATEGROUPS
-                                $context = context_module::instance($cm->id);
                                 $accessallusers = has_capability('moodle/site:accessallgroups', $context);
                             }
                         }
@@ -2516,11 +2562,14 @@ class data_field_report extends data_field_base {
                         if ($accessthisuser) {
                             $groupid = 0;
                             if ($groupmode == VISIBLEGROUPS || $groupmode == SEPARATEGROUPS) {
-                                $groups = groups_get_user_groups($data->course, $userid);
-                                if (is_array($groups)) {
-                                    $groups = $groups[0];
+                                $groupid = $DB->get_field('data_records', 'groupid', array('id' => $recordid));
+                                if (empty($groupid)) {
+                                    $groups = groups_get_user_groups($data->course, $userid);
                                     if (is_array($groups)) {
-                                        $groupid = $groups[0];
+                                        $groups = $groups[0];
+                                        if (is_array($groups)) {
+                                            $groupid = $groups[0];
+                                        }
                                     }
                                 }
                             }
@@ -2533,9 +2582,12 @@ class data_field_report extends data_field_base {
                                 'approved' => 0,
                             );
                             if ($record->id = $DB->insert_record('data_records', $record)) {
-                                foreach ($fields as $fieldid => $fieldname) {
-                                    if (is_array($fieldvalues) && array_key_exists($fieldname, $fieldvalues)) {
-                                        $content = $this->compute($record->id, $fieldvalues[$fieldname]);
+                                foreach ($fields as $fieldid => $field) {
+                                    if (is_array($fieldvalues) && array_key_exists($field->name, $fieldvalues)) {
+                                        // Note that we use $recordid (the id of the originating record)
+                                        // not $record->id, which is the id of the record that has just
+                                        // been created and is not very useful for computing field values.
+                                        $content = $this->compute($recordid, $fieldvalues[$field->name]);
                                     } else {
                                         $content = '';
                                     }
@@ -2544,7 +2596,16 @@ class data_field_report extends data_field_base {
                                         'fieldid' => $fieldid,
                                         'content' => $content
                                     );
-                                    $content->id = $DB->insert_record('data_content', $content);
+                                    if ($content->id = $DB->insert_record('data_content', $content)) {
+                                        if ($field->type == 'file' && $content->content) {
+                                            $params = array('recordid' => $recordid, 'fieldid' => $fieldid);
+                                            if ($itemid = $DB->get_field('data_content', 'id', $params)) {
+                                                $file = array('component' => 'mod_data', 'filearea' => 'content',
+                                                              'itemid' => $itemid, 'contextid' => $context->id);
+                                                file_copy_file_to_file_area($file, $content->content, $content->id);
+                                            }
+                                        }
+                                    }
                                 }
                                 $records[$record->id] = $userid;
                             }
@@ -2632,7 +2693,8 @@ class data_field_report extends data_field_base {
         if (empty($userids)) {
             return $staticuserids[$dataid];
         } else {
-            return array_intersect($staticuserids[$dataid], $userids);
+            // $userids comes first so that the order of the userids is maintained.
+            return array_intersect($userids, $staticuserids[$dataid]);
         }
     }
 
