@@ -81,13 +81,13 @@ $string['onevalue'] = '1 value';
 $string['onevote'] = '1 vote';
 $string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
 $string['outputformat'] = 'Output format';
-$string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the {$a->fieldname} field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
+$string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the "{$a->fieldname}" field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
 $string['reportfieldintroduction'] = 'On this page, you can define the rules to format this field for input and output. The formats are specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel. Details of the functions are available in the "Mini manual" at the bottom of this page.';
 $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
 *   RECORD_USER
-:   the id of the user who created the current record
+:   the id of the owner of the current record. Usually this is the user who created the record, but in some cases, it may be the user for whom the current record was created.
 
 *   CURRENT_USER
 :   the id of the user who is viewing the current record

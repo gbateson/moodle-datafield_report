@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2022-02-18 (43)
+ - add new function 'select_records' to display a menu of records matching certain conditions
+
 2022-02-02 (42)
  - refine GET_USER_RECORD function to create multiple records if necessary
 

@@ -493,10 +493,10 @@ class data_field_report extends data_field_base {
 
                     case 'RECORD_USER':
                         if (empty($recordid)) {
+                            // A new record is being created.
                             return optional_param('uid', $USER->id, PARAM_INT);
-                        } else {
-                            return $DB->get_field('data_records', 'userid', array('id' => $recordid));
                         }
+                        return $DB->get_field('data_records', 'userid', array('id' => $recordid));
 
                     case 'CURRENT_VALUE':
                         $params = array('recordid' => $recordid, 'fieldid' => $this->field->id);
@@ -800,9 +800,245 @@ class data_field_report extends data_field_base {
         return null;
     }
 
+    protected function compute_sql_isempty($recordid, $arguments, $default='CURRENT_DATABASE') {
+    }
+
+    protected function compute_sql_isnull($recordid, $arguments, $default='') {
+    }
+
+    protected function compute_sql_and($recordid, $arguments, $default='') {
+    }
+
+    protected function compute_sql_or($recordid, $arguments, $default='') {
+    }
+
+    protected function compute_sql_like($recordid, $arguments, $default='') {
+    }
+
     /**
-     * compute_get_user_records_menu
-     * GET_USER_RECORDS_MENU(database, users, fieldvalues, conditions, returnfield)
+     * conditionset: ARRAY(join, conditions)
+     * conditionset: conditions
+     *               ARRAY(fieldname, value, ...),
+     */
+    protected function parse_conditionset($recordid, $items, &$fields) {
+        if (is_array($items) && count($items) == 2 && key($items) === 0) {
+            // ARRAY(join, conditions)
+            if ($join = $this->parse_join($items[0])) {
+                if ($conditions =  $this->parse_conditions($recordid, $items[1], $fields)) {
+                    return array($join, $conditions);
+                }
+            }
+        }
+        if ($conditions = $this->parse_conditions($recordid, $items, $fields)) {
+            return array('AND', $conditions);
+        }
+        return false;
+    }
+ 
+    /**
+     * parse_join
+     *
+     * join: "AND", "OR"
+     */
+    protected function parse_join($item) {
+        if (is_string($item)) {
+            $join = trim(strtoupper($item));
+            if ($join == 'AND' || $join == 'OR') {
+                return $join;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * parse_conditions
+     *
+     * @param integer $recordid
+     * @param array $items either ARRAY(fieldname, value, ...) or ARRAY(conditions, ...)
+     * @param array $fields [fieldname => $fieldid]
+     */
+    protected function parse_conditions($recordid, $items, &$fields) {
+        $conditions = array();
+        if (is_array($items)) {
+            $is_name_value_list = $this->is_name_value_list($items);
+            foreach ($items as $i => $item) {
+                if ($is_name_value_list) {
+                    // ARRAY(fieldname, value, ...)
+                    if ($i % 2 == 0) {
+                        $name = '';
+                        $value = '';
+                        if (array_key_exists($item, $fields)) {
+                            $name = $item;
+                        }
+                    } else if ($name) {
+                        $value = $this->compute($recordid, $item, '');
+                        $conditions[] = array($name, '=', $value);
+                    }
+                } else if (is_numeric($i)) {
+                    // ARRAY(condition ...)
+                    if ($condition = $this->parse_condition($recordid, $item, $fields)) {
+                        $conditions[] = $condition;
+                    }
+                } else if (array_key_exists($i, $fields)) {
+                    // ARRAY(fieldname => value, ...)
+                    $value = $this->compute($recordid, $item, '');
+                    $conditions[] = array($i, '=', $value);
+                }
+            }
+        }
+        if (count($conditions)) {
+            return $conditions;
+        }
+        return false;
+    }
+
+    /**
+     * has_numeric_keys
+     */
+    protected function is_name_value_list($items) {
+        $count = 0;
+        if (is_array($items)) {
+            foreach ($items as $i => $item) {
+                if ($i == $count) {
+                    // $i is a numeric and sequential.
+                    $count++;
+                } else {
+                    // Oops, $i is non-numeric or non-sequential.
+                    return false;
+                }
+            }
+        }
+        // We require at least one item in the array.
+        // Also check that the first item is a string.
+        return ($count > 0 && is_string($items[0]));
+    }
+
+    /**
+     * condition: ARRAY(fieldname, value)
+     * condition: ARRAY_ITEM(fieldname, value)
+     * condition: ARRAY(fieldname, operator, value)
+     */
+    protected function parse_condition($recordid, $item, $fields) {
+        if (is_array($item)) {
+            $field = '';
+            $operator = '';
+            $value = '';
+            switch (count($item)) {
+                case 3:
+                    list($field, $operator, $value) = $item;
+                    break;
+                case 2:
+                    list($field, $operator) = $item;
+                    break;
+                case 1:
+                    list($field) = $item;
+                    $operator = 'IS NOT EMPTY';
+                    break;
+            }
+            if (is_string($field) && $field && array_key_exists($field, $fields)) {
+                if (empty($operator)) {
+                    $operator = 'IS NOT EMPTY';
+                } else {
+                    $operator = trim(strtoupper($operator));
+                }
+                if (is_string($operator)) {
+                    if (in_array($operator, array('IS NULL', 'IS NOT NULL', 'IS EMPTY', 'IS NOT EMPTY'))) {
+                        // $value not required
+                        $value = '';
+                    } else if (in_array($operator, array('=', '!=', '<>', '<', '<=', '>', '>='))) {
+                        // value required
+                        $value = $this->compute($recordid, $value, '');
+                    } else {
+                        // invalid operator
+                        $operator = '';
+                        $value = '';
+                    }
+                }
+                if ($field && $operator) {
+                    return array($field, $operator, $value);
+                }
+            }
+        }
+        return false;
+    }
+
+    protected function sql_conditionset($conditionset, &$fields) {
+        $from = array();
+        $where = array();
+        $params = array();
+        list($join, $conditions) = $conditionset;
+        foreach ($conditions as $condition) {
+            list($conditionfrom, $conditionwhere, $conditionparams) = $this->sql_condition($condition, $fields);
+            if ($conditionfrom) {
+                $from[] = $conditionfrom;
+            }
+            if ($conditionwhere) {
+                $where[] = $conditionwhere;
+            }
+            if ($conditionparams) {
+                $params = array_merge($params, $conditionparams);
+            }
+            
+        }
+        $from = implode(',', $from);
+        $where = implode($join, $where);
+        return array($from, $where, $params);
+    }
+
+    protected function sql_condition($condition, &$fields) {
+        global $DB;
+
+        list($fieldname, $operator, $value) = $condition;
+
+        $alias = $this->sql_alias('dc');
+        $from = '{data_content} '.$alias;
+        $where = "dc1.recordid = $alias.recordid AND $alias.fieldid = ?";
+        $params = array($fields[$fieldname]);
+
+        switch ($operator) {
+            case 'NULL':
+            case 'IS NULL':
+                $where .= " AND $alias.content IS NULL";
+                break;
+            case 'NOT NULL':
+            case 'IS NOT NULL':
+                $where .= " AND $alias.content IS NOT NULL";
+                break;
+            case 'EMPTY':
+            case 'IS EMPTY':
+                $where .= " AND ($alias.content IS NULL OR $alias.content = ?)";
+                $params[] = '';
+                break;
+            case 'NOT EMPTY':
+            case 'IS NOT EMPTY':
+                $where .= " AND $alias.content IS NOT NULL AND $alias.content != ?";
+                $params[] = '';
+                break;
+            case 'LIKE':
+            case 'IS LIKE':
+                $where .= ' AND '.$DB-sql_like("$alias.content", '?', false, false, true);
+                $params[] = $value;
+                break;
+            case 'NOT LIKE':
+            case 'IS NOT LIKE':
+                $where .= ' AND '.$DB-sql_like("$alias.content", '?', false, false, false);
+                $params[] = $value; // e.g. '%something%'
+                break;
+            default: // =, !=, <>, <, <=, >, >=
+                $where .= " AND $alias.content $operator ?";
+                $params[] = $value;
+        }
+        return array($from, $where, $params);
+    }
+
+    protected function sql_alias($prefix) {
+        static $i = 0;
+        return $prefix.(++$i);
+    }
+
+    /**
+     * compute_select_records
+     * select_records(database, users, conditions, displayfield)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -810,50 +1046,65 @@ class data_field_report extends data_field_base {
      * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
      * @return array
      */
-    protected function compute_get_user_records_menu($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
+    // SELECT_RECORDS(PREVIOUS_DATABASE, CURRENT_USERS, ARRAY("duplicate", "IS EMPTY"), "presentation_title")
+    protected function compute_select_records($recordid, $arguments, $default='CURRENT_USERS', $multiple=true) {
         global $DB;
 
-        $recordids = $this->compute_get_user_records($recordid, $arguments, $default, $multiple);
-        if (count($recordids)) {
+        $dataid = 0;
+        $recordids = array();
+        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
+            if ($dataid = $this->valid_dataid($database)) {
+                if ($users = $this->compute($recordid, array_shift($arguments), $default)) {
+                    if (is_scalar($users)) {
+                        $users = array($users);
+                    }
+                    $recordids = $this->valid_user_recordids($recordid, $database, $users, $multiple, null);
+                }
+            }
+        }
 
-            $conditions = $this->compute($recordid, array_shift($arguments));
-            $returnfield = $this->compute($recordid, array_shift($arguments));
+        if ($dataid && is_array($recordids) && count($recordids)) {
 
+            // Fetch all fields in this database.
             $params = array('dataid' => $dataid);
             $fields = $DB->get_records_menu('data_fields', $params, '', 'name,id');
+            if (empty($fields)) {
+                $fields = array(); // shouldn't happen !!
+            }
 
-            if (is_array($fields) && in_array($returnfield, $fields)) {
+            $conditionset = $this->compute($recordid, array_shift($arguments), array());
+            $displayfield = $this->compute($recordid, array_shift($arguments), '');
 
-                $i = 0;
-                $alias = 'dc'.(++$i);
+            if (array_key_exists($displayfield, $fields)) {
 
+                $conditionset = $this->parse_conditionset($recordid, $conditionset, $fields);
+
+                // Create SQL to select $display field content.               
+                $alias = $this->sql_alias('dc'); // dc1
                 $select = "$alias.recordid, $alias.content";
                 $from   = array('{data_content} '.$alias);
 
                 list($where, $params) = $DB->get_in_or_equal($recordids);
                 $where = array("$alias.recordid $where");
                 $where[] = "$alias.fieldid = ?";
-                $params[] = $fields[$returnfield];
+                $params[] = $fields[$displayfield];
 
-                foreach ($conditions as $fieldname => $value) {
-                    if (in_array($fieldname, $fields)) {
-                        $alias = 'dc'.(++$i);
-                        array_push($from, '{data_content} '.$alias);
-                        array_push($where, "dc1.recordid = $alias.recordid",
-                                           "$alias.fieldid = ?",
-                                           "$alias.content = ?");
-                        array_push($params, $fields[$fieldname], $value);
-                    }
-                }
-
+                // Add SQL for conditions.
+                list($conditionfrom, $conditionwhere, $conditionparams) = $this->sql_conditionset($conditionset, $fields);
+                $from[] = $conditionfrom;
                 $from = implode(', ', $from);
+                $where[] = $conditionwhere;
                 $where = implode(' AND ', $where);
+                $params = array_merge($params, $conditionparams);
+
+                // Fetch $dislayfield menu for records that match conditions.
                 $records = "SELECT $select FROM $from WHERE $where";
                 if ($records = $DB->get_records_sql_menu($records, $params)) {
                     return $records;
                 }
             }
         }
+
         return array();
     }
 
@@ -2138,25 +2389,43 @@ class data_field_report extends data_field_base {
     protected function compute_array($recordid, $arguments) {
         $array = array();
         while (count($arguments)) {
+            // Check if next argument is an "ARRAY_ITEM".
+            $arrayitem = $this->is_array_item($arguments[0]);
+
+            // Compute scalar value of this item.
             $item = $this->compute($recordid, array_shift($arguments));
-            if (is_null($item)) {
+            if ($item === null) {
                 continue;
             }
-            if (is_scalar($item)) {
-                $key = 0;
-                $value = $item;
+            if ($arrayitem && is_array($item)) {
+                foreach ($item as $key => $value) {
+                    $array[$key] = $value;
+                }
             } else {
-                // an ARRAY_ITEM
-                $key = key($item);
-                $value = reset($item);
-            }
-            if ($key === 0) {
-                $array[] = $value;
-            } else {
-                $array[$key] = $value;
+                $array[] = $item;
             }
         }
         return $array;
+    }
+
+    /**
+     * is_array_item
+     * check that $item is a function called ARRAY_ITEM function
+     *
+     * @param mixed $item
+     * @return boolean TRUE if $item is an ARRAY_ITEM; otherwise, FALSE.
+     */
+    protected function is_array_item($item) {
+        if (is_object($item)) {
+            if (property_exists($item, 'type') && $item->type == 'function') {
+                if (property_exists($item, 'name') && $item->name == 'ARRAY_ITEM') {
+                    if (property_exists($item, 'arguments') && is_array($item->arguments)) {
+                        return (count($item->arguments) <= 2);
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
