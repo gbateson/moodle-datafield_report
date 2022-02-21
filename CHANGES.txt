@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2022-02-21 (44)
+ - trigger record created event when new records are created by this plugin
+
 2022-02-18 (43)
  - add new function 'select_records' to display a menu of records matching certain conditions
 

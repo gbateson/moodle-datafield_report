@@ -2842,15 +2842,33 @@ class data_field_report extends data_field_base {
                                     }
                                 }
                             }
+                            // NOTE: we could also use "data_add_record()" to add the record,
+                            // but that also sets the approved = 1 for teachers and admins.
                             $record = (object)array(
                                 'userid' => $userid,
-                                'groupid' => $groupid,
                                 'dataid' => $dataid,
+                                'groupid' => $groupid,
                                 'timecreated' => $time,
                                 'timemodified' => $time,
                                 'approved' => 0,
                             );
                             if ($record->id = $DB->insert_record('data_records', $record)) {
+
+                                // Trigger a "record_created" event.
+                                if (class_exists('\\mod_data\\event\\record_created')) {
+                                    $event = \mod_data\event\record_created::create(array(
+                                        'objectid' => $record->id,
+                                        'context' => $context,
+                                        'other' => array(
+                                            'dataid' => $dataid
+                                        )
+                                    ));
+                                    $event->trigger();
+                                }
+
+                                // Update the completion state for this user.
+                                $this->update_completion_state($data, $course, $cm, $userid);
+
                                 foreach ($fields as $fieldid => $field) {
                                     if (is_array($fieldvalues) && array_key_exists($field->name, $fieldvalues)) {
                                         // Note that we use $recordid (the id of the originating record)
@@ -2899,6 +2917,44 @@ class data_field_report extends data_field_base {
             return array();
         } else {
             return '';
+        }
+    }
+
+    /**
+     * Sets the automatic completion state for this database item based on the
+     * count of on its entries.
+     *
+     * This method is a copy of "data_update_completion_state()", except that it
+     * also accepts a $userid, so that we can set the completion state of someone
+     * other than the current user, and an $override flag, so that we can override
+     * the user's current completion state, if required.
+     *
+     * @param object $data The data object for this activity
+     * @param object $course Course
+     * @param object $cm course-module
+     */
+    protected function update_completion_state($data, $course, $cm, $userid=0, $override=false) {
+
+        // Get the minimum number of entries required for completion.
+        // This check comes first because it is a very quick and cheap.
+        if ($minentries = $data->completionentries) {
+
+            // Check that completion is enabled for this database activity.
+            $completion = new completion_info($course);
+            if ($completion->is_enabled($cm)) {
+
+                // Set the completion state based on whether or not the user has added
+                // at least the minimum number of records required for completion.
+                $numentries = data_numentries($data, $userid);
+                if ($numentries >= $minentries) {
+                    $state = COMPLETION_COMPLETE;
+                } else {
+                    $state = COMPLETION_INCOMPLETE;
+                }
+
+                // Update the completion state.
+                $completion->update_state($cm, $state, $userid, $override);
+            }
         }
     }
 
