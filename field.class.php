@@ -2842,7 +2842,7 @@ class data_field_report extends data_field_base {
                                     }
                                 }
                             }
-                            // NOTE: we could also use "data_add_record()" to add the record,
+                            // NOTE: we could use "data_add_record()" to add the record,
                             // but that also sets the approved = 1 for teachers and admins.
                             $record = (object)array(
                                 'userid' => $userid,
@@ -2854,7 +2854,8 @@ class data_field_report extends data_field_base {
                             );
                             if ($record->id = $DB->insert_record('data_records', $record)) {
 
-                                // Trigger a "record_created" event.
+                                // Trigger a "record_created" event (Moodle >= 2.7)
+                                // file_exists($CFG->dirroot.'/mod/data/classes/event/record_created.php')
                                 if (class_exists('\\mod_data\\event\\record_created')) {
                                     $event = \mod_data\event\record_created::create(array(
                                         'objectid' => $record->id,

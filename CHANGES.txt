@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2022-04-04 (45)
+ - small improvements to code comments
+
 2022-02-21 (44)
  - trigger record created event when new records are created by this plugin
 
