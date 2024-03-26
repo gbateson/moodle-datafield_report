@@ -1016,12 +1016,12 @@ class data_field_report extends data_field_base {
                 break;
             case 'LIKE':
             case 'IS LIKE':
-                $where .= ' AND '.$DB-sql_like("$alias.content", '?', false, false, true);
+                $where .= ' AND '.$DB->sql_like("$alias.content", '?', false, false, true);
                 $params[] = $value;
                 break;
             case 'NOT LIKE':
             case 'IS NOT LIKE':
-                $where .= ' AND '.$DB-sql_like("$alias.content", '?', false, false, false);
+                $where .= ' AND '.$DB->sql_like("$alias.content", '?', false, false, false);
                 $params[] = $value; // e.g. '%something%'
                 break;
             default: // =, !=, <>, <, <=, >, >=
