@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2025-02-02 (50)
+ - datafield_template add files for mustache templates
+
 2025-02-02 (49)
  - use mustache templates in Moodle >= 4.4
 
