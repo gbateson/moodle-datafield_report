@@ -37,7 +37,7 @@ require_once($CFG->dirroot.'/mod/data/field/admin/field.class.php');
 class data_field_report extends data_field_base {
     var $type = 'report';
 
-    // param1: format for addtemplaate and asearchtemplate
+    // param1: format for addtemplate and asearchtemplate
     // param2: format for listtemplate and singletemplate
     // param3: extra format string
     // param4: extra format string
@@ -75,6 +75,24 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * This field just sets up a default field object
+     *
+     * @return bool
+     */
+    function define_default_field() {
+
+        // Define id, dataid, type, name, description,
+        // required and param1~3 in the normal way.
+        parent::define_default_field();
+
+        // Additionally, define params 4~5.
+        $this->field->param4 = '';
+        $this->field->param5 = '';
+
+        return true;
+    }
+
+    /**
      * Display the settings for this field on the "Fields" page
      *
      * @return void, but output is echo'd to browser
@@ -103,6 +121,8 @@ class data_field_report extends data_field_base {
      * display content for this field from a user record
      */
     function display_field($recordid, $template) {
+
+        // Determine which "param[1-4]" field we need.
         switch ($template) {
             case '1':
             case '2':
@@ -147,6 +167,8 @@ class data_field_report extends data_field_base {
                 // Format is not recognized.
                 return $template;
         }
+
+        // Detect if field is "SAME_AS_" some other field.
         if (substr($this->field->$param, 0, 8) == 'SAME_AS_') {
             switch (substr($this->field->$param, 8)) {
                 case 'INPUT':
@@ -352,7 +374,43 @@ class data_field_report extends data_field_base {
      * @since Moodle 3.3
      */
     public function get_config_for_external() {
-    	return data_field_admin::get_field_params($this->field);
+    	return data_field_admin::get_field_params_for_external($this->field);
+    }
+
+    /**
+     * Return the params required by "templates/xxx.mustache" template.
+     *
+     * @return array the list of config parameters
+     * @since Moodle 3.3
+     */
+    protected function get_field_params(): array {
+
+        // Fetch the name, description and params1-10.
+        $data = parent::get_field_params();
+
+        // Convert action types to array suitable for mustache template.
+        $name = 'restoretypes';
+        $data[$name] = self::get_restore_types();
+        $data[$name] = data_field_admin::mustache_select_options(
+            $data['param5'], $data[$name]
+        );
+
+        // Convert action types to array suitable for mustache template.
+        $name = 'minimanual';
+        $data[$name] = self::get_restore_types();
+
+        $data[$name] = get_string('reportfieldfunctions', 'datafield_report');
+        $data[$name] = format_text($data[$name], FORMAT_MARKDOWN);
+        
+        $params = array('class' => 'rounded bg-secondary text-dark mx-0 my-2 p-2');
+        $data[$name] = str_replace('<h4>', html_writer::start_tag('h4', $params), $data[$name]);
+        
+        $params = array('class' => 'bg-light border border-dark rounded mx-0 my-1 py-0 px-2');
+        $data[$name] = html_writer::tag('div', $data[$name], $params);
+
+        data_field_admin::require_js('/mod/data/field/report/templates/template.js', true);
+
+        return $data;
     }
 
     /////////////////////////////////////////////
@@ -1484,6 +1542,17 @@ class data_field_report extends data_field_base {
             $format
         );
 
+        $names = array(
+            'firstname', 'firstnamephonetic',
+            'lastname', 'lastnamephonetic',
+            'alternatename'
+        );
+        foreach ($names as $name) {
+            if (empty($user->$name)) {
+                $user->$name = '';
+            }
+        }
+
         // replace (ENGLISH|JAPANESE)_NAME
         $format = preg_replace_callback(
             '/\b([A-Z]+)(_NAME)?\b/i',
@@ -1495,17 +1564,23 @@ class data_field_report extends data_field_base {
                     case 'LOWASCII':
                     case 'SINGLEBYTE':
                         $search = '/^[ -~]+$/';
-                        if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
-                            return 'Firstname LASTNAME';
+                        if (isset($user->firstname) && isset($user->lastname)) {
+                            if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
+                                return 'Firstname LASTNAME';
+                            }
                         }
-                        if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
-                            return 'Firstnamephonetic LASTNAMEPHONETIC';
+                        if (isset($user->firstnamephonetic) && isset($user->lastnamephonetic)) {
+                            if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
+                                return 'Firstnamephonetic LASTNAMEPHONETIC';
+                            }
                         }
                         // Otherwise, try this user's "alternatename" field.
-                        $name = preg_replace('/[^ -~]+/', '', $user->alternatename);
-                        $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
-                        $name = preg_replace('/\s+/', ' ', trim($name));
-                        return $name;
+                        if (isset($user->alternatename)) {
+                            $name = preg_replace('/[^ -~]+/', '', $user->alternatename);
+                            $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
+                            $name = preg_replace('/\s+/', ' ', trim($name));
+                            return $name;
+                        }
 
                     case 'CHINESE':
                     case 'JAPANESE':
@@ -1513,17 +1588,23 @@ class data_field_report extends data_field_base {
                     case 'HIGHASCII':
                     case 'DOUBLEBYTE':
                         $search = '/^[^ -~]+$/';
-                        if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
-                            return 'lastname firstname';
+                        if (isset($user->firstname) && isset($user->lastname)) {
+                            if (preg_match($search, $user->firstname) && preg_match($search, $user->lastname)) {
+                                return 'lastname firstname';
+                            }
                         }
-                        if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
-                            return 'lastnamephonetic firstnamephonetic';
+                        if (isset($user->firstnamephonetic) && isset($user->lastnamephonetic)) {
+                            if (preg_match($search, $user->firstnamephonetic) && preg_match($search, $user->lastnamephonetic)) {
+                                return 'lastnamephonetic firstnamephonetic';
+                            }
                         }
                         // Otherwise, try this user's "alternatename" field.
-                        $name = preg_replace('/[ -~]+/', '', $user->alternatename);
-                        $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
-                        $name = preg_replace('/\s+/', ' ', trim($name));
-                        return $name;
+                        if (isset($user->alternatename)) {
+                            $name = preg_replace('/[ -~]+/', '', $user->alternatename);
+                            $name = preg_replace('/[\(\)\{\}\[\]]+/', '', $name);
+                            $name = preg_replace('/\s+/', ' ', trim($name));
+                            return $name;
+                        }
                 }
                 return $name;
             },

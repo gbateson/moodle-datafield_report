@@ -292,7 +292,7 @@ $string['reportfieldfunctions'] = '
 :   d=99 a database id number
 :   id=99 a course module id number
 :   cmid=99 a course module id number
-:   a string that matches the name of database in the specified course
+:   a string that matches the name of a database activity in the specified course
 :   NEXT(activity type or name string) e.g. NEXT(), NEXT("data"), NEXT("*Feedback*")
 :   PREV(activity type or name string) e.g. PREV(), PREV("data"), PREV("*Presentation*")
 :   PREVIOUS(activity type or name string) an alias for the "PREV()" function
@@ -316,10 +316,11 @@ $string['reportfieldfunctions'] = '
     -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
     -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
 
-*   when matching the name of a database, field, course, group or user, the following special characters can be used:
-:   an asterisk, "*", matches any string of characters, including no characters.
-:   a caret, "^", matches the beginning of the string
-:   a dollar sign, "$", matches the end of the string
+*   Special characters
+:   The following special characters can be used when matching the name of a database, field, course, group or user:
+    -   an asterisk, "*", matches any string of characters, including no characters.
+    -   a caret, "^", matches the beginning of the string
+    -   a dollar sign, "$", matches the end of the string
 ';
 $string['restoretype_help'] = 'This setting signifies how to handle values imported during a "restore" or "Import entries" operation.
 

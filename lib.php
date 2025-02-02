@@ -35,3 +35,10 @@ require_once($CFG->dirroot.'/mod/data/field/admin/lib.php');
 function datafield_report_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, $options=array()) {
     return datafield_admin_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, $options, 'report');
 }
+
+/**
+ * Get icon mapping for font-awesome.
+ */
+function datafield_report_get_fontawesome_icon_map() {
+    return ['mod_data:field/report' => 'fa-solid fa-align-justify'];
+}

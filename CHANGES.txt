@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2025-02-02 (49)
+ - use mustache templates in Moodle >= 4.4
+
 2023-03-26 (46)
  - fix typo causing error in PHP 7.x
 
