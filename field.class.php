@@ -378,15 +378,24 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * Return the params required by "templates/xxx.mustache" template.
+     * Retrieves and prepares configuration parameters for the Mustache template.
      *
-     * @return array the list of config parameters
-     * @since Moodle 3.3
+     * This method extends the parent method to fetch default field parameters
+     * and enhances them with additional settings required by the Mustache template.
+     * It processes restore types, report field functions, and ensures proper formatting
+     * for display. Additionally, it loads required JavaScript and adds help icons for
+     * applicable fields.
+     *
+     * @return array The list of prepared configuration parameters for the Mustache template.
+     * @since Moodle 4.4
      */
     protected function get_field_params(): array {
 
         // Fetch the name, description and params1-10.
         $data = parent::get_field_params();
+
+        // Add labels and help icons for the mustache template.
+        $data = data_field_admin::add_labels_and_help($data, $this);
 
         // Convert action types to array suitable for mustache template.
         $name = 'restoretypes';
@@ -411,6 +420,20 @@ class data_field_report extends data_field_base {
         data_field_admin::require_js('/mod/data/field/report/templates/template.js', true);
 
         return $data;
+    }
+
+    /**
+     * Map param names to a label string and component.
+     * Used by datafield_admin::add_labels_and_help($data, $field).
+     */
+    public static function get_string_names() {
+        return [
+            'param1' => ['inputformat', 'datafield_report'],
+            'param2' => ['outputformat', 'datafield_report'],
+            'param3' => ['extraformat1', 'datafield_report'],
+            'param4' => ['extraformat2', 'datafield_report'],
+            'param5' => ['restoretype', 'datafield_report'],
+        ];
     }
 
     /////////////////////////////////////////////
