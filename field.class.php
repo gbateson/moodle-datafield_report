@@ -2620,21 +2620,16 @@ class data_field_report extends data_field_base {
 
         $type = $this->get_valid_type($type);
 
+        // The provider may have been entered as a simple string
+        // which we assume to be the name e.g. "OpenAI", or "Gemini".
         if (is_string($provider)) {
-            $provider = [$provider, '', '', [], []];
+            $provider = [strtolower($provider), '', '', [], []];
         }
+
+        // Extract provider details.
         list($name, $key, $url, $headers, $postparams) = $provider;
 
         if (in_array($name, $this->get_core_providers())) {
-            $responsedata = [
-                'id' => 'chatcmpl-B8oM64tLtHgnTjU9XKvvqQKj6O0bx',
-                'fingerprint' => 'fp_eb9dce56a8',
-                'generatedcontent' => 'Your sentence effectively communicates your message, but it could be improved for clarity and grammar. Here is a revised version: "I was born in Osaka, but now I live in Kochi, which I love because of its tasty food and abundant nature."',
-                'finishreason' => 'stop',
-                'prompttokens' => '94',
-                'completiontokens' => '51',
-            ];
-            return $responsedata['generatedcontent'];
             $manager = new \core_ai\manager();
             $action = '\\core_ai\\aiactions\\generate_'.$type;
             $action = new $action(
@@ -2648,11 +2643,10 @@ class data_field_report extends data_field_base {
         }
 
         if ($name == 'openai') {
-            $key = $this->compute($recordid, array_shift($arguments));
             $url = 'https://api.openai.com/v1/chat/completions';
             $headers = [
-                'Authorization' => "Bearer {$key}",
-                'Content-Type' => 'application/json'
+                'Authorization: Bearer '.$key,
+                'Content-Type: application/json',
             ];
             $role = 'Act as an expert assessor of work submitted by students.';
             $postparams = [
@@ -2665,9 +2659,11 @@ class data_field_report extends data_field_base {
             $curl = new \curl();
             $curl->setHeader($headers);
             $response = $curl->post($url, json_encode($postparams));
+            //$response = '{ "id": "chatcmpl-B8yozN73Yvfe1wjp01tQPCGWd3CqH", "object": "chat.completion", "created": 1741480121, "model": "gpt-4-0613", "choices": [ { "index": 0, "message": { "role": "assistant", "content": "Thank you for your work. Your sentence structure does need some improvements so your point can be more clearly understood. You should use the phrase \"I was born\" instead of \"I have born\". Additionally, when describing what you like about Kochi, proper conjunctions and articles can help the sentence flow better. For example, you might want to write, \"which I love for its tasty food and expansive nature\". Putting it all together, a corrected version of your sentence would be: \"I was born in Osaka, but now I live in Kochi, which I love for its tasty food and expansive nature.\" Keep it up. Writing becomes smoother with practice, so don\'t be disheartened!", "refusal": null }, "logprobs": null, "finish_reason": "stop" } ], "usage": { "prompt_tokens": 53, "completion_tokens": 142, "total_tokens": 195, "prompt_tokens_details": { "cached_tokens": 0, "audio_tokens": 0 }, "completion_tokens_details": { "reasoning_tokens": 0, "audio_tokens": 0, "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0 } }, "service_tier": "default", "system_fingerprint": null } ';
             if ($curl->error) {
                 return get_string('Error').get_string('labelsep').$response;
             }
+            $response = trim($response); // Remove any trailing whitespace.
             if (substr($response, 0, 1) == '[' && substr($response, -1) == ']' ||
                 substr($response, 0, 1) == '{' && substr($response, -1) == '}') {
                 $response = json_decode($response, true); // Force array structure.
@@ -2676,28 +2672,49 @@ class data_field_report extends data_field_base {
         }
 
         if ($name == 'gemini') {
-            $key = $this->compute($recordid, array_shift($arguments));
-            $url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=$key";
-        
-            $headers = ['Content-Type' => 'application/json'];
-        
-            $role = 'Act as an expert assessor of work submitted by students.';
-        
-            $postparams = [
-                'contents' => [[
-                        'role' => 'user',
-                        'parts' => [['text' => $role], ['text' => $prompt]]
-                ]]
-            ];
-        
+            $baseurl='https://generativelanguage.googleapis.com/v1';
+
+            // Get available models
             $curl = new \curl();
-            $curl->setHeader($headers);
-            $response = $curl->post($url, json_encode($postparams));
-        
+            $curl->setHeader(['Content-Type: application/json']);
+            $response = $curl->get("$baseurl/models", ['key' => $key]);
             if ($curl->error) {
                 return get_string('Error') . get_string('labelsep') . $response;
             }
-        
+            $response = json_decode($response, true);
+            if ($models = array_key_exists('models', $response)) {
+                $models = $response['models'];
+            }
+            if (is_array($models) ) {
+                foreach ($models as $m => $model) {
+                    $name = '';
+                    if (preg_match('/(pro|flash)(-(latest|lite))?$/', $model['name'])) {
+                        if (array_key_exists('supportedGenerationMethods', $model)) {
+                            if (in_array('generateContent', $model['supportedGenerationMethods'])) {
+                                $name = $model['name'];
+                            }
+                        }
+                    }
+                    $models[$m] = $name;
+                }
+                $models = array_filter($models);
+                $model = reset($models);
+            } else {
+                $model = 'models/gemini-1.5-pro';
+                //$model = 'models/gemini-1.5-flash';
+                //$model = 'models/gemini-2.0-flash';
+                //$model = 'models/gemini-2.0-flash-list';
+            }
+
+            // Use selected model to generate content.
+            $url = "$baseurl/$model:generateContent";
+            $postparams = ["contents" => [["parts" => [["text" => $prompt]]]]];
+            $curl = new \curl();
+            $curl->setHeader(['Content-Type: application/json']);
+            $response = $curl->post("$url?key=$key", json_encode($postparams));
+            if ($curl->error) {
+                return get_string('Error') . get_string('labelsep') . $response;
+            }
             $response = json_decode($response, true);
             return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
         }
@@ -2739,7 +2756,7 @@ class data_field_report extends data_field_base {
         $url = $this->compute($recordid, array_shift($arguments));
         $headers = $this->compute($recordid, array_shift($arguments));
         $postparams = $this->compute($recordid, array_shift($arguments));
-        return [$name, $key, $url, $headers, $postparams];
+        return [strtolower($name), $key, $url, $headers, $postparams];
     }
 
     /**
