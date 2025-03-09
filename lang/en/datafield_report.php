@@ -61,9 +61,9 @@ You can then initiate the AJAX call using the JS.ajax object, thus:
         // do something with responsetext
     });
 ';
-$string['errorfunctionarguments'] = 'Oops; incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
+$string['errorfunctionarguments'] = 'Oops! Incorrect arguments for the {$a->name} function. It expects {$a->count} arguments: {$a->description}';
 $string['errorfunctionusers'] = 'a format string, and a list of user ids.';
-$string['errorunknownfunction'] = 'Oops, unknown function: {$a}';
+$string['errorunknownfunction'] = 'Oops! unknown function: {$a}';
 $string['extraformat1_help'] = $string['extraformat_help'];
 $string['extraformat1'] = 'Extra format (1)';
 $string['extraformat2_help'] = $string['extraformat_help'];
@@ -81,13 +81,13 @@ $string['onevalue'] = '1 value';
 $string['onevote'] = '1 vote';
 $string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
 $string['outputformat'] = 'Output format';
-$string['reducearrayresult'] = 'Oops, the "{$a->template}" value for the "{$a->fieldname}" field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
+$string['reducearrayresult'] = 'Oops! The "{$a->template}" value for the "{$a->fieldname}" field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
 $string['reportfieldintroduction'] = 'On this page, you can define the rules to format this field for input and output. The formats are specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel. Details of the functions are available in the "Mini manual" at the bottom of this page.';
 $string['reportfieldfunctions'] = '
 #### Shortcuts to commonly used ids and values
 
 *   RECORD_USER
-:   the id of the owner of the current record. Usually this is the user who created the record, but in some cases, it may be the user for whom the current record was created.
+:   the id of the owner of the current record. Usually this is the user who created the record, but in some cases, it may be the user for whom the current record was created
 
 *   CURRENT_USER
 :   the id of the user who is viewing the current record
@@ -118,7 +118,7 @@ $string['reportfieldfunctions'] = '
 
 *   CURRENT_USERS
 :   an array of student user ids and teachers that the current user can interact with in the current course
-:   If the database activity is using separate groups, this list contains only the users in groups to which the current user belongs.
+:   If the database activity is using separate groups, this list contains only the users in groups to which the current user belongs
 
 *   CURRENT_STUDENTS
 :   an array of student user ids that the current user can interact with in the current course
@@ -137,6 +137,9 @@ $string['reportfieldfunctions'] = '
 *   GET_VALUES(field, records=CURRENT_RECORD)
 :   return an array of values
 
+*   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
+:   return a single dataid (i.e. the id of a record in the "data" table)
+
 *   GET_FIELD(field, database=CURRENT_DATABASE)
 :   return a single field id
 
@@ -151,9 +154,6 @@ $string['reportfieldfunctions'] = '
 
 *   GET_USER_RECORDS(database=CURRENT_DATABASE, user=CURRENT_USER)
 :   return an array of record ids
-
-*   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
-:   return a single dataid (i.e. the id of a record in the "data" table)
 
 *   GET_GROUP(group=CURRENT_GROUPS, course=CURRENT_COURSE)
 :   return a single group id
@@ -199,25 +199,25 @@ $string['reportfieldfunctions'] = '
 
 *   URL(field, record=CURRENT_RECORD)
 :   return the url of the field in the specified record
-:   "file" and "picture" fields will be converted to the apropriate Moodle URL.
+:   "file" and "picture" fields will be converted to the appropriate Moodle URL
 
 *   LINK(url)
-:   format an &lt;a&gt; tag for the given url.
+:   format an &lt;a&gt; tag for the given url
 
 *   IMAGE(url)
-:   format an &lt;img&gt; tag for the given url.
+:   format an &lt;img&gt; tag for the given url
 
 *   AUDIO(url)
-:   format an HTML5 &lt;audio&gt; tag for the given url.
+:   format an HTML5 &lt;audio&gt; tag for the given url
 
 *   VIDEO(url)
-:   return an HTML5 &lt;video&gt; tag for the given url.
+:   return an HTML5 &lt;video&gt; tag for the given url
 
 *   LIST(values, listtype)
 :   return the values formatted as an HTML list depending on the listtype ("UL", "OL" or "DL")
 
 *   COUNT_LIST(records)
-:   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values.
+:   return an HTML list in which each value is preceded by a count of how many times that value occurs, and under which appears the total number of values
 
 *   SCORE_LIST(field, records, valuetype)
 :   return an HTML list in which each value is preceded by information on how many times that value occurs, the number of points awarded for each occurence of the value, and the total number of points awarded. Under the list appears information about the total number of points awarded, the total number of occurences, and the average number of points awarded per occurrence. 
@@ -259,9 +259,9 @@ $string['reportfieldfunctions'] = '
 :   return a long list produced by merging the lists together
 
 *   SCORE(scoretype, field, records=CURRENT_RECORD)
-:   return the score of the given field in the given records.
+:   return the score of the given field in the given records
 :   the "scoretype" can be one of the following: avg, max, min, sum
-:   if the field is a menu of text items, the score for each value will be calculated from its position in the menu, highest to lowest.
+:   if the field is a menu of text items, the score for each value will be calculated from its position in the menu, highest to lowest
 
 *   SCORE_AVG(field, records=CURRENT_RECORD)
 :   shortcut for SCORE("avg", field, records=CURRENT_RECORD)
@@ -276,10 +276,10 @@ $string['reportfieldfunctions'] = '
 :   shortcut for SCORE("sum", field, records=CURRENT_RECORD)
 
 *   TOTAL(totaltype, fields, records=CURRENT_RECORD)
-:   return the total score for the selected records.
+:   return the total score for the selected records
 :   the "totaltype" can be one of the following: avg, max, min, sum
 :   "fields" is a string containing a comma-separated list of fields
-:   the total score is calculated as the aggregate score for the specified fields.
+:   the total score is calculated as the aggregate score for the specified fields
 
 #### Arguments for functions
 
@@ -299,7 +299,7 @@ $string['reportfieldfunctions'] = '
 
 *   "course" can be one of the following:
 :   a course id number
-:   otherwise, a string that matches the shortname of a course on this Moodle site.
+:   otherwise, a string that matches the shortname of a course on this Moodle site
 
 *   "group" can be one of the following
 :   the id of a group in the specified course
@@ -312,15 +312,32 @@ $string['reportfieldfunctions'] = '
 *   "format" can be one of the following
 :   the word "default", in which case the default for name format for the current language will be used
 :   a string containing the names of one or more name fields from a user record e.g. Firstname LASTNAME
-    -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH"
-    -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith"
-    -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith"
+    -   If a name field is uppercase in the format string, the value of that name field in the output will also be uppercase, e.g "LASTNAME" produces "SMITH".
+    -   If a name field is titlecase in the format string, the value of that name field in the output will also be titlecase, e.g "Lastname" produces "Smith".
+    -   If a name field is lowercase in the format string, the value of that name field in the output will also be lowercase, e.g "lastname" produces "smith".
 
 *   Special characters
 :   The following special characters can be used when matching the name of a database, field, course, group or user:
-    -   an asterisk, "*", matches any string of characters, including no characters.
-    -   a caret, "^", matches the beginning of the string
-    -   a dollar sign, "$", matches the end of the string
+    -   An asterisk, "*", matches any string of characters, including no characters.
+    -   A caret, "^", matches the beginning of the string.
+    -   A dollar sign, "$", matches the end of the string.
+
+#### Generative-AI functions
+
+*   GENERATE(type, provider, prompt, files=NULL)
+:   send the prompt and files (optional) to the AI provider in order to generate content of the required type ("text", "image", "audio", "video")
+
+*   PROVIDER(name, key="", url="", headers=NULL, postfields=NULL)
+:   define the information necessary to access an AI provider that generates content
+    -   For AI providers on the Moodle site, only the name (e.g. "OpenAI") is required.
+    -   For Google Gemini, only the name (i.e. "Gemini") and key are required.
+    -   For all other providers, all parameters are required.
+
+*   HEADERS(name1, value1, ...)
+:   create headers for a request sent to an AI provider.
+
+*   POSTFIELDS(name1, value1, ...)
+:   create post fields for a request sent to an AI provider.
 ';
 $string['restoretype_help'] = 'This setting signifies how to handle values imported during a "restore" or "Import entries" operation.
 
@@ -328,9 +345,9 @@ $string['restoretype_help'] = 'This setting signifies how to handle values impor
 *   **Ignore:** imported value should be ignored (i.e. stored value will be set to NULL)
 *   **Username:** imported value is a username and will be converted to a userid
 *   **User full name:** imported value is a user\'s fullname and will be converted to a userid
-*   **Group name:** imported value is the name of an group and will be converted to a group id
+*   **Group name:** imported value is the name of a group and will be converted to a group id
 *   **Activity name:** imported value is the name of an activity and will be converted to a course module id
-*   **Course name:** imported value is the name of course and will be converted to a course id';
+*   **Course name:** imported value is the name of a course and will be converted to a course id';
 $string['restoretype'] = 'Restore type';
 $string['scorelistitem'] = '[{$a->numberpoints} x {$a->numbervotes} = {$a->totalpoints}] ';
 $string['scorelisttotal'] = '{$a->totalpoints} from {$a->countvotes} (average of {$a->averagepoints} per vote)';

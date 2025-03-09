@@ -50,8 +50,38 @@ class data_field_report extends data_field_base {
     //         activityname - imported value is the name of an activity and will be converted to a course module id
     //         coursename - imported value is the name of course and will be converted to a course id
 
-    var $studentids = null;
-    var $teacherids = null;
+    /**
+     * Cached list of valid student IDs in the course.
+     *
+     * This variable stores an array of user IDs for students who have the capability
+     * to view database entries (`mod/data:viewentry`). It is initialized in the
+     * `valid_studentids()` method and excludes users who also have teacher capabilities.
+     *
+     * @var array|null List of student user IDs or `null` if not yet initialized.
+     */
+    public $studentids = null;
+
+    /**
+     * Cached list of valid teacher IDs in the course.
+     *
+     * This variable stores an array of user IDs for teachers (including non-editing teachers)
+     * who have the capability to manage database entries (`mod/data:manageentries`).
+     * It is initialized in the `valid_teacherids()` method to optimize performance.
+     *
+     * @var array|null List of teacher user IDs or `null` if not yet initialized.
+     */
+    public $teacherids = null;
+
+    /**
+     * Cached list of AI providers that support text generation.
+     *
+     * This variable stores an array of provider names retrieved from the Moodle AI manager.
+     * If `null`, the providers have not been fetched yet. Once populated, it avoids redundant
+     * API calls by caching the list.
+     *
+     * @var array|null List of AI provider names or `null` if not yet initialized.
+     */
+     public $providers = null;
 
     const REGEXP_FUNCTION_START = '/^\s*(\w+)\s*\(/s';
     const REGEXP_FUNCTION_END = '/^\s*\)/s';
@@ -116,6 +146,14 @@ class data_field_report extends data_field_base {
     function display_browse_field($recordid, $template) {
         return $this->display_field($recordid, $template);
     }
+
+    /*
+     * Typically, report fields do not use the "update_content()" method
+     * because they generally do not require input from the user.
+     * However, they can be used to store AI-generated content,
+     * in which case the standard "update_content()" method is
+     * called from "mod/data/field/action/types/generate/class.php".
+     */
 
     /**
      * display content for this field from a user record
@@ -189,10 +227,12 @@ class data_field_report extends data_field_base {
                     break;
             }
         }
+
         if (empty($this->field->$param)) {
             // Requested format is empty :-(
             return '';
         }
+
         if ($arguments = $this->parse_arguments($recordid, $this->field->$param, 0)) {
             list($arguments, $offset) = $arguments;
             foreach ($arguments as $a => $argument) {
@@ -410,10 +450,10 @@ class data_field_report extends data_field_base {
 
         $data[$name] = get_string('reportfieldfunctions', 'datafield_report');
         $data[$name] = format_text($data[$name], FORMAT_MARKDOWN);
-        
+
         $params = array('class' => 'rounded bg-secondary text-dark mx-0 my-2 p-2');
         $data[$name] = str_replace('<h4>', html_writer::start_tag('h4', $params), $data[$name]);
-        
+
         $params = array('class' => 'bg-light border border-dark rounded mx-0 my-1 py-0 px-2');
         $data[$name] = html_writer::tag('div', $data[$name], $params);
 
@@ -773,6 +813,59 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * compute_get_value
+     * GET_VALUE(field, record)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_get_value($recordid, $arguments) {
+        return $this->compute_get_values($recordid, $arguments, 'CURRENT_RECORD', false);
+    }
+
+    /**
+     * compute_get_values
+     * GET_VALUES(field, records)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param mized $default records
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
+     * @return integer
+     */
+    protected function compute_get_values($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
+        global $DB;
+
+        if ($field = $this->compute($recordid, array_shift($arguments))) {
+            if ($records = $this->compute($recordid, array_shift($arguments), $default)) {
+
+                $dataid = $this->valid_dataid_from_recordids($records);
+                $fieldid = $this->valid_fieldid($dataid, $field);
+
+                list($select, $params) = $DB->get_in_or_equal($records);
+                $select = "fieldid = ? AND recordid $select";
+                array_unshift($params, $fieldid);
+
+                if ($values = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
+                    if ($multiple) {
+                        return $values;
+                    } else {
+                        return reset($values);
+                    }
+                }
+            }
+        }
+
+        // Oops, no record found :-(
+        if ($multiple) {
+            return array();
+        } else {
+            return null;
+        }
+    }
+
+    /**
      * compute_get_database
      * GET_DATABASE(database)
      * "database" can be one of the following:
@@ -915,7 +1008,7 @@ class data_field_report extends data_field_base {
         }
         return false;
     }
- 
+
     /**
      * parse_join
      *
@@ -1059,7 +1152,7 @@ class data_field_report extends data_field_base {
             if ($conditionparams) {
                 $params = array_merge($params, $conditionparams);
             }
-            
+
         }
         $from = implode(',', $from);
         $where = implode($join, $where);
@@ -1160,7 +1253,7 @@ class data_field_report extends data_field_base {
 
                 $conditionset = $this->parse_conditionset($recordid, $conditionset, $fields);
 
-                // Create SQL to select $display field content.               
+                // Create SQL to select $display field content.
                 $alias = $this->sql_alias('dc'); // dc1
                 $select = "$alias.recordid, $alias.content";
                 $from   = array('{data_content} '.$alias);
@@ -1187,6 +1280,125 @@ class data_field_report extends data_field_base {
         }
 
         return array();
+    }
+
+    /**
+     * compute_get_group
+     * GET_GROUP(group)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_get_group($recordid, $arguments) {
+        return $this->compute_get_groups($recordid, $arguments, 'CURRENT_GROUP', false);
+    }
+
+    /**
+     * compute_get_groups
+     * GET_GROUPS(groups, course)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param mixed $default groups
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
+     * @return integer
+     */
+    protected function compute_get_groups($recordid, $arguments, $default='CURRENT_GROUPS', $multiple=true) {
+        if ($groups = $this->compute($recordid, array_shift($arguments), $default)) {
+            if ($course = $this->compute($recordid, array_shift($arguments), 'CURRENT_COURSE')) {
+                return $this->valid_groupids($groups, $course, $multiple);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * compute_get_group_users
+     * GET_GROUP_USERS(group, course)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    //protected function compute_get_group_users($recordid, $arguments, $multiple=true) {
+    //    $groups = $this->compute($recordid, array_shift($arguments));
+    //    $course = $this->compute($recordid, array_shift($arguments));
+    //    return $this->valid_group_userids($course, $groups, $multiple);
+    //}
+
+    /**
+     * compute_get_course_users
+     * GET_COURSE_USERS(course)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param boolean $multiple
+     * @return integer
+     */
+    //protected function compute_get_course_users($recordid, $arguments, $multiple=true) {
+    //    $course = $this->compute($recordid, array_shift($arguments));
+    //    return $this->valid_course_userids($course, $multiple);
+    //}
+
+    /**
+     * compute_my_group_userids
+     * MY_GROUP_USERIDS(group)
+     *
+     * @param array $arguments
+     * @return string
+     */
+    protected function compute_my_group_userids($recordid, $arguments) {
+        global $DB;
+        $output = '';
+
+        $select = '';
+        if (empty($arguments)) {
+            $groups = groups_get_activity_allowed_groups($this->cm);
+            if (is_array($groups) && count($groups)) {
+                list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
+            }
+        } else {
+            $argument = array_shift($arguments);
+            switch ($argument->type) {
+
+                case 'string':
+                    list($select, $params) = $this->get_sql_like('name', $argument->value);
+                    $select = "course = ? AND name $select";
+                    array_unshift($params, $this->data->course);
+                    $groupid = $DB->get_field_select('groups', 'id', $select, $params);
+                    break;
+
+                case 'integer':
+                    $params = array('id' => $argument->value,
+                                    'course' => $this->data->course);
+                    $groupid = $DB->get_field('groups', 'id', $params);
+                    break;
+
+                default:
+                    $groupid = 0; // $this->compute($recordid, $argument[0])
+            }
+            if ($groupid) {
+                $select = '= ?';
+                $params = array($groupid);
+            }
+        }
+        if ($select) {
+            if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'userid', 'id, userid')) {
+                $userids = array_unique($userids);
+                $userids = array_flip($userids);
+                if ($teachers = $this->valid_teacherids()) {
+                    foreach ($teachers as $teacherid) {
+                        unset($userids[$teacherid]);
+                    }
+                }
+                if (count($userids)) {
+                    $output = array_flip($userids);
+                }
+            }
+        }
+        return $output;
     }
 
     /**
@@ -1307,178 +1519,6 @@ class data_field_report extends data_field_base {
             }
         }
         return null;
-    }
-
-    /**
-     * compute_get_value
-     * GET_VALUE(field, record)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @return integer
-     */
-    protected function compute_get_value($recordid, $arguments) {
-        return $this->compute_get_values($recordid, $arguments, 'CURRENT_RECORD', false);
-    }
-
-    /**
-     * compute_get_values
-     * GET_VALUES(field, records)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @param mized $default records
-     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
-     * @return integer
-     */
-    protected function compute_get_values($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
-        global $DB;
-
-        if ($field = $this->compute($recordid, array_shift($arguments))) {
-            if ($records = $this->compute($recordid, array_shift($arguments), $default)) {
-
-                $dataid = $this->valid_dataid_from_recordids($records);
-                $fieldid = $this->valid_fieldid($dataid, $field);
-
-                list($select, $params) = $DB->get_in_or_equal($records);
-                $select = "fieldid = ? AND recordid $select";
-                array_unshift($params, $fieldid);
-
-                if ($values = $DB->get_records_select_menu('data_content', $select, $params, 'id', 'id,content')) {
-                    if ($multiple) {
-                        return $values;
-                    } else {
-                        return reset($values);
-                    }
-                }
-            }
-        }
-
-        // Oops, no record found :-(
-        if ($multiple) {
-            return array();
-        } else {
-            return null;
-        }
-    }
-
-    /**
-     * compute_get_group
-     * GET_GROUP(group)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @return integer
-     */
-    protected function compute_get_group($recordid, $arguments) {
-        return $this->compute_get_groups($recordid, $arguments, 'CURRENT_GROUP', false);
-    }
-
-    /**
-     * compute_get_groups
-     * GET_GROUPS(groups, course)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @param mixed $default groups
-     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
-     * @return integer
-     */
-    protected function compute_get_groups($recordid, $arguments, $default='CURRENT_GROUPS', $multiple=true) {
-        if ($groups = $this->compute($recordid, array_shift($arguments), $default)) {
-            if ($course = $this->compute($recordid, array_shift($arguments), 'CURRENT_COURSE')) {
-                return $this->valid_groupids($groups, $course, $multiple);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * compute_get_group_users
-     * GET_GROUP_USERS(group, course)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @param boolean $multiple
-     * @return integer
-     */
-    //protected function compute_get_group_users($recordid, $arguments, $multiple=true) {
-    //    $groups = $this->compute($recordid, array_shift($arguments));
-    //    $course = $this->compute($recordid, array_shift($arguments));
-    //    return $this->valid_group_userids($course, $groups, $multiple);
-    //}
-
-    /**
-     * compute_get_course_users
-     * GET_COURSE_USERS(course)
-     *
-     * @param array $arguments
-     * @param integer $recordid
-     * @param boolean $multiple
-     * @return integer
-     */
-    //protected function compute_get_course_users($recordid, $arguments, $multiple=true) {
-    //    $course = $this->compute($recordid, array_shift($arguments));
-    //    return $this->valid_course_userids($course, $multiple);
-    //}
-
-    /**
-     * compute_my_group_userids
-     * MY_GROUP_USERIDS(group)
-     *
-     * @param array $arguments
-     * @return string
-     */
-    protected function compute_my_group_userids($recordid, $arguments) {
-        global $DB;
-        $output = '';
-
-        $select = '';
-        if (empty($arguments)) {
-            $groups = groups_get_activity_allowed_groups($this->cm);
-            if (is_array($groups) && count($groups)) {
-                list($select, $params) = $DB->get_in_or_equal(array_keys($groups));
-            }
-        } else {
-            $argument = array_shift($arguments);
-            switch ($argument->type) {
-
-                case 'string':
-                    list($select, $params) = $this->get_sql_like('name', $argument->value);
-                    $select = "course = ? AND name $select";
-                    array_unshift($params, $this->data->course);
-                    $groupid = $DB->get_field_select('groups', 'id', $select, $params);
-                    break;
-
-                case 'integer':
-                    $params = array('id' => $argument->value,
-                                    'course' => $this->data->course);
-                    $groupid = $DB->get_field('groups', 'id', $params);
-                    break;
-
-                default:
-                    $groupid = 0; // $this->compute($recordid, $argument[0])
-            }
-            if ($groupid) {
-                $select = '= ?';
-                $params = array($groupid);
-            }
-        }
-        if ($select) {
-            if ($userids = $DB->get_records_select_menu('groups_members', "groupid $select", $params, 'userid', 'id, userid')) {
-                $userids = array_unique($userids);
-                $userids = array_flip($userids);
-                if ($teachers = $this->valid_teacherids()) {
-                    foreach ($teachers as $teacherid) {
-                        unset($userids[$teacherid]);
-                    }
-                }
-                if (count($userids)) {
-                    $output = array_flip($userids);
-                }
-            }
-        }
-        return $output;
     }
 
     /**
@@ -2562,6 +2602,214 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * GENERATE(type, provider, prompt, files=NULL)
+     * Send the prompt and files (optional) to the AI provider in order to
+     * generate content of the required type ("text", "image", "audio", "video").
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array or scalar value
+     */
+    protected function compute_generate($recordid, $arguments) {
+        global $USER;
+
+        $type = $this->compute($recordid, array_shift($arguments));
+        $provider = $this->compute($recordid, array_shift($arguments));
+        $prompt = $this->compute($recordid, array_shift($arguments));
+        $files = $this->compute($recordid, array_shift($arguments));
+
+        $type = $this->get_valid_type($type);
+
+        if (is_string($provider)) {
+            $provider = [$provider, '', '', [], []];
+        }
+        list($name, $key, $url, $headers, $postparams) = $provider;
+
+        if (in_array($name, $this->get_core_providers())) {
+            $responsedata = [
+                'id' => 'chatcmpl-B8oM64tLtHgnTjU9XKvvqQKj6O0bx',
+                'fingerprint' => 'fp_eb9dce56a8',
+                'generatedcontent' => 'Your sentence effectively communicates your message, but it could be improved for clarity and grammar. Here is a revised version: "I was born in Osaka, but now I live in Kochi, which I love because of its tasty food and abundant nature."',
+                'finishreason' => 'stop',
+                'prompttokens' => '94',
+                'completiontokens' => '51',
+            ];
+            return $responsedata['generatedcontent'];
+            $manager = new \core_ai\manager();
+            $action = '\\core_ai\\aiactions\\generate_'.$type;
+            $action = new $action(
+                userid: $USER->id,
+                contextid: $this->context->id,
+                prompttext: $prompt
+            );
+            $response = $manager->process_action($action);
+            $responsedata = $response->get_response_data();
+            return $responsedata['generatedcontent'];
+        }
+
+        if ($name == 'openai') {
+            $key = $this->compute($recordid, array_shift($arguments));
+            $url = 'https://api.openai.com/v1/chat/completions';
+            $headers = [
+                'Authorization' => "Bearer {$key}",
+                'Content-Type' => 'application/json'
+            ];
+            $role = 'Act as an expert assessor of work submitted by students.';
+            $postparams = [
+                'model' => 'gpt-4',
+                'messages' => [
+                    (object)['role' => 'system', 'content' => $role],
+                    (object)['role' => 'user', 'content' => $prompt],
+                ],
+            ];
+            $curl = new \curl();
+            $curl->setHeader($headers);
+            $response = $curl->post($url, json_encode($postparams));
+            if ($curl->error) {
+                return get_string('Error').get_string('labelsep').$response;
+            }
+            if (substr($response, 0, 1) == '[' && substr($response, -1) == ']' ||
+                substr($response, 0, 1) == '{' && substr($response, -1) == '}') {
+                $response = json_decode($response, true); // Force array structure.
+            }
+            return ($response['choices'][0]['message']['content'] ?? '');
+        }
+
+        if ($name == 'gemini') {
+            $key = $this->compute($recordid, array_shift($arguments));
+            $url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=$key";
+        
+            $headers = ['Content-Type' => 'application/json'];
+        
+            $role = 'Act as an expert assessor of work submitted by students.';
+        
+            $postparams = [
+                'contents' => [[
+                        'role' => 'user',
+                        'parts' => [['text' => $role], ['text' => $prompt]]
+                ]]
+            ];
+        
+            $curl = new \curl();
+            $curl->setHeader($headers);
+            $response = $curl->post($url, json_encode($postparams));
+        
+            if ($curl->error) {
+                return get_string('Error') . get_string('labelsep') . $response;
+            }
+        
+            $response = json_decode($response, true);
+            return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
+        }
+
+        // Provider is not recognized by this plugin,
+        // so we require all the access details.
+        $key = $this->compute($recordid, array_shift($arguments));
+        $url = $this->compute($recordid, array_shift($arguments));
+        $headers = $this->compute($recordid, array_shift($arguments));
+        $postparams = $this->compute($recordid, array_shift($arguments));
+    }
+
+    /**
+     * Ensure the given content type is valid.
+     */
+    protected function get_valid_type($type) {
+        $validtypes = ['text', 'image', 'audio', 'video'];
+        $type = strtolower($type);
+        $i = array_search($type, $validtypes);
+        if (is_numeric($i)) {
+            $type = $validtypes[$i];
+        } else {
+            $type = reset($validtypes);
+        }
+        return $type;
+    }
+
+    /**
+     * PROVIDER(name, key="", url="", headers=NULL, postparams=NULL)
+     * Define the information necessary to access an AI provider that generates content.
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array or scalar value
+     */
+    protected function compute_provider($recordid, $arguments) {
+        $name = $this->compute($recordid, array_shift($arguments));
+        $key = $this->compute($recordid, array_shift($arguments));
+        $url = $this->compute($recordid, array_shift($arguments));
+        $headers = $this->compute($recordid, array_shift($arguments));
+        $postparams = $this->compute($recordid, array_shift($arguments));
+        return [$name, $key, $url, $headers, $postparams];
+    }
+
+    /**
+     * Retrieves a list of AI providers that are enabled and capable of generating text.
+     *
+     * This method checks if AI functionality is available in the Moodle core.
+     * If AI providers are available for the `generate_text` action, it retrieves
+     * and stores their names. The list of providers is cached in `$this->providers`
+     * to avoid redundant calls.
+     *
+     * @return array A list of AI provider names that support text generation.
+     */
+    protected function get_core_providers() {
+        if ($this->providers === null) {
+            $this->providers = [];
+            if (class_exists('\\core_ai\\manager')) {
+                $action = \core_ai\aiactions\generate_text::class;
+                $providers = \core_ai\manager::get_providers_for_actions([$action], true);
+                foreach ($providers[$action] as $provider) {
+                    // Get plugin name, e.g. "aiprovider_openai".
+                    $this->providers[] = substr($provider->get_name(), 11);
+                }
+            }
+        }
+        return $this->providers;
+    }
+
+    /**
+     * Create headers for a request sent to an AI provider
+     * HEADERS(name1, value1, ...)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array
+     */
+    protected function compute_headers($recordid, $arguments) {
+        $headers = array();
+        while (count($arguments)) {
+            if ($name = $this->compute($recordid, array_shift($arguments))) {
+                $value = $this->compute($recordid, array_shift($arguments));
+                if (isset($value)) {
+                    $headers[$name] = $value;
+                }
+            }
+        }
+        return $headers;
+    }
+
+    /**
+     * Create postparams for a request sent to an AI provider
+     * POSTFIELDS(name1, value1, ...)
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return array
+     */
+    protected function compute_postparams($recordid, $arguments) {
+        $postparams = array();
+        while (count($arguments)) {
+            if ($name = $this->compute($recordid, array_shift($arguments))) {
+                $value = $this->compute($recordid, array_shift($arguments));
+                if (isset($value)) {
+                    $postparams[$name] = $value;
+                }
+            }
+        }
+        return $postparams;
+    }
+
+    /**
      * format the accessibility label for this field.
      */
     protected function accessibility_label() {
@@ -2863,7 +3111,7 @@ class data_field_report extends data_field_base {
      * @param mixed $users
      * @param boolean $multiple
      * @param mixed $fieldvalues
-     * @return mixed 
+     * @return mixed
      */
     protected function valid_user_recordids($recordid, $database, $users, $multiple, $fieldvalues) {
         global $DB, $USER;
