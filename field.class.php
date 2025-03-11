@@ -866,6 +866,99 @@ class data_field_report extends data_field_base {
     }
 
     /**
+     * compute_get_file
+     * GET_FILE(field, record)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_get_file($recordid, $arguments) {
+        return $this->compute_get_files($recordid, $arguments, 'CURRENT_RECORD', false);
+    }
+
+    /**
+     * compute_get_files
+     * GET_FILES(field, records)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @param mized $default records
+     * @param boolean $multiple TRUE if we should return multiple results; otherwise FALSE
+     * @return integer
+     */
+    protected function compute_get_files($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
+        global $DB;
+
+        // Get the field values, which are actually records form the "data_content" table.
+        if ($files = $this->compute_get_values($recordid, $arguments, $default, true)) {
+
+            // Fetch the file storage manager.
+            $fs = get_file_storage();
+
+            // Cache the values required to access individual files.
+            $contextid = $this->context->id;
+            $component = 'mod_data';
+            $filearea = 'content';
+            $filepath = '/';
+
+            foreach ($files as $contentid => $filename) {
+
+                // Ensure that the context is the right one for this contentid.
+                // We expect $contextid to be equal to $this->context->id.
+                $select = 'ctx.id';
+                $from = [
+                    '{data_content} dc',
+                    '{data_records} dr',
+                    '{course_modules} cm',
+                    '{modules} m',
+                    '{context} ctx'
+                ];
+                $from = implode(',', $from);
+                $where = [
+                    'dc.id = ?',
+                    'dc.recordid = dr.id',
+                    'dr.dataid = cm.instance',
+                    'cm.module = m.id',
+                    'm.name = ?',
+                    'cm.id = ctx.instanceid',
+                    'ctx.contextlevel = ?'
+                ];
+                $where = implode(' AND ', $where);
+                $params = [$contentid, 'data', CONTEXT_MODULE];
+                $sql = "SELECT $select FROM $from WHERE $where";
+                $contextid = $DB->get_field_sql($sql, $params);
+
+                // As a fallback, we can use the context of the current database activity.
+                if (empty($contextid)) {
+                    $contextid = $this->context->id;
+                }
+
+                // Fetch the file object represetning this file.
+                $files[$contentid] = $fs->get_file(
+                    $contextid, $component, $filearea, $contentid, $filepath, $filename
+                );
+            }
+
+            // Remove any missing files.
+            $files = array_filter($files);
+
+            if ($multiple) {
+                return $files;
+            } else {
+                return reset($files);
+            }
+        }
+
+        // Oops, no file records found :-(
+        if ($multiple) {
+            return array();
+        } else {
+            return null;
+        }
+    }
+
+    /**
      * compute_get_database
      * GET_DATABASE(database)
      * "database" can be one of the following:
@@ -888,7 +981,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_field
-     * GET_FIELD(field, database)
+     * GET_FIELD(field, database=CURRENT_DATABASE)
      * "field" is one of the following:
      *   the numeric id of a field
      *   a string that matches the name of a field
@@ -2627,7 +2720,7 @@ class data_field_report extends data_field_base {
         }
 
         // Extract provider details.
-        list($name, $key, $url, $headers, $postparams) = $provider;
+        list($name, $model, $key, $url, $headers, $postparams) = $provider;
 
         if (in_array($name, $this->get_core_providers())) {
             $manager = new \core_ai\manager();
@@ -2663,42 +2756,68 @@ class data_field_report extends data_field_base {
             if ($curl->error) {
                 return get_string('Error').get_string('labelsep').$response;
             }
-            $response = trim($response); // Remove any trailing whitespace.
-            if (substr($response, 0, 1) == '[' && substr($response, -1) == ']' ||
-                substr($response, 0, 1) == '{' && substr($response, -1) == '}') {
-                $response = json_decode($response, true); // Force array structure.
+
+            // Force array structure of response.
+            if ($this->is_json($response)) {
+                $response = json_decode($response, true);
             }
             return ($response['choices'][0]['message']['content'] ?? '');
         }
 
         if ($name == 'gemini') {
-            $baseurl='https://generativelanguage.googleapis.com/v1';
+            $baseurl='https://generativelanguage.googleapis.com/v1beta';
+            $filesurl = 'https://generativelanguage.googleapis.com/upload/v1/files';
 
             // Get available models
-            $curl = new \curl();
-            $curl->setHeader(['Content-Type: application/json']);
-            $response = $curl->get("$baseurl/models", ['key' => $key]);
-            if ($curl->error) {
-                return get_string('Error') . get_string('labelsep') . $response;
-            }
-            $response = json_decode($response, true);
-            if ($models = array_key_exists('models', $response)) {
-                $models = $response['models'];
-            }
-            if (is_array($models) ) {
-                foreach ($models as $m => $model) {
-                    $name = '';
-                    if (preg_match('/(pro|flash)(-(latest|lite))?$/', $model['name'])) {
-                        if (array_key_exists('supportedGenerationMethods', $model)) {
-                            if (in_array('generateContent', $model['supportedGenerationMethods'])) {
-                                $name = $model['name'];
+            if (empty($model)) {
+                $curl = new \curl();
+                $curl->setHeader(['Content-Type: application/json']);
+                $response = $curl->get("$baseurl/models", ['key' => $key]);
+                if ($curl->error) {
+                    return get_string('Error').get_string('labelsep').$response;
+                }
+                $response = json_decode($response, true);
+                if ($models = array_key_exists('models', $response)) {
+                    $models = $response['models'];
+                }
+                if (is_array($models) ) {
+                    // Reduce each model object to just a name.
+                    foreach ($models as $m => $model) {
+                        $name = '';
+                        if (preg_match('/(pro|flash)(-(latest|lite))?$/', $model['name'])) {
+                            if (array_key_exists('supportedGenerationMethods', $model)) {
+                                if (in_array('generateContent', $model['supportedGenerationMethods'])) {
+                                    $name = $model['name'];
+                                }
                             }
                         }
+                        $models[$m] = $name;
                     }
-                    $models[$m] = $name;
+                    // Select the name of the first non-empty model.
+                    $models = array_filter($models);
+                    $model = reset($models);
                 }
-                $models = array_filter($models);
-                $model = reset($models);
+            }
+
+            if (is_string($model)) {
+                $model = trim($model);
+            } else {
+                $model = ''; // Shouldn't happen !!
+            }
+
+            // Regex to match the Gemini model.
+            // $1: "models/" (optional)
+            // $2: "gemini-" (optional)
+            // $3: version e.g. 1.5 or 2.0
+            // $4: name e.g. -pro, -flash, -flash-lite
+            $search = '/^(models\/)?(gemini-)?(\d+\.\d+)(-[a-z-]+)?$/';
+            if (preg_match($search, $model, $match)) {
+                $model = 'models/gemini-'.$match[3];
+                if ($match[4]) {
+                    $model .= $match[4];
+                } else {
+                    $model .= '-pro';
+                }
             } else {
                 $model = 'models/gemini-1.5-pro';
                 //$model = 'models/gemini-1.5-flash';
@@ -2706,25 +2825,87 @@ class data_field_report extends data_field_base {
                 //$model = 'models/gemini-2.0-flash-list';
             }
 
+            // https://ai.google.dev/api/generate-content
+            // Create a "Blob"
+            $parts = [];
+            $parts[] = ['text' => $prompt];
+            if ($files) {
+                if (is_scalar($files) || is_object($files)) {
+                    $files = [$files];
+                }
+                foreach ($files as $file) {
+                    $parts[] = ['inline_data' => [
+                        'mime_type' => $file->get_mimetype(),
+                        'data' => base64_encode($file->get_content()),
+                    ]];
+                }
+            }
+
             // Use selected model to generate content.
             $url = "$baseurl/$model:generateContent";
-            $postparams = ["contents" => [["parts" => [["text" => $prompt]]]]];
+            $postparams = ['contents' => [['parts' => $parts]]];
             $curl = new \curl();
             $curl->setHeader(['Content-Type: application/json']);
             $response = $curl->post("$url?key=$key", json_encode($postparams));
             if ($curl->error) {
-                return get_string('Error') . get_string('labelsep') . $response;
+                return get_string('Error').get_string('labelsep').$response;
             }
-            $response = json_decode($response, true);
-            return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
+            if ($this->is_json($response)) {
+                $response = json_decode($response, true);
+            }
+            if (array_key_exists('candidates', $response)) {
+                return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
+            }
+            if (array_key_exists('error', $response)) {
+                return ($response['error']['message'] ?? '');
+            }
+            return get_string('Error').get_string('labelsep').'Unrecognized response structure ('.array_keys($response).')';
         }
 
-        // Provider is not recognized by this plugin,
-        // so we require all the access details.
-        $key = $this->compute($recordid, array_shift($arguments));
-        $url = $this->compute($recordid, array_shift($arguments));
-        $headers = $this->compute($recordid, array_shift($arguments));
-        $postparams = $this->compute($recordid, array_shift($arguments));
+        // $name is not recognized by this plugin.
+        // Use $name, $model, $key, $url, $headers, $postparams, $return
+        // to send request and return result
+        $curl = new \curl();
+        $curl->setHeader($headers);
+        $response = $curl->post($url, json_encode($postparams));
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+        if (is_string($return)) {
+            $return = explode(',', $return);
+        }
+        if (is_array($return)) {
+            while (count($return)) {
+                $key = array_shift($return);
+                if (array_key_exists($key, $response)) {
+                    $response = $response[$key];
+                }
+            }
+        }
+        if (is_array($return)) {
+            return implode(', ', $return);
+        } else {
+            return $response;
+        }
+    }
+
+    /**
+     * Determine whether or not the given response string is a JSON string.
+     *
+     * @param string $response
+     * @return boolean  TRUE if the $response string is a JSON string; Otherwise, FALSE.
+     */
+    protected function is_json($response) {
+        if (is_string($response)) {
+            $response = trim($response); // Remove trailing space.
+            if (substr($response, 0, 1) == '{' && substr($response, -1) == '}') {
+                return true;
+            }
+            if (substr($response, 0, 1) == '[' && substr($response, -1) == ']') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -2743,7 +2924,7 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * PROVIDER(name, key="", url="", headers=NULL, postparams=NULL)
+     * PROVIDER(name, model="", key="", url="", headers=NULL, postparams=NULL)
      * Define the information necessary to access an AI provider that generates content.
      *
      * @param integer $recordid
@@ -2752,11 +2933,12 @@ class data_field_report extends data_field_base {
      */
     protected function compute_provider($recordid, $arguments) {
         $name = $this->compute($recordid, array_shift($arguments));
+        $model = $this->compute($recordid, array_shift($arguments));
         $key = $this->compute($recordid, array_shift($arguments));
         $url = $this->compute($recordid, array_shift($arguments));
         $headers = $this->compute($recordid, array_shift($arguments));
         $postparams = $this->compute($recordid, array_shift($arguments));
-        return [strtolower($name), $key, $url, $headers, $postparams];
+        return [strtolower($name), $model, $key, $url, $headers, $postparams];
     }
 
     /**

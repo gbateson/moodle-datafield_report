@@ -327,7 +327,7 @@ $string['reportfieldfunctions'] = '
 *   GENERATE(type, provider, prompt, files=NULL)
 :   send the prompt and files (optional) to the AI provider in order to generate content of the required type ("text", "image", "audio", "video")
 
-*   PROVIDER(name, key="", url="", headers=NULL, postfields=NULL)
+*   PROVIDER(name, model="", key="", url="", headers=NULL, postfields=NULL)
 :   define the information necessary to access an AI provider that generates content
     -   For AI providers on the Moodle site, only the name (e.g. "OpenAI") is required.
     -   For Google Gemini, only the name (i.e. "Gemini") and key are required.

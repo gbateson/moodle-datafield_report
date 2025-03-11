@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2025-03-11 (56)
+ - allow for fields to be included in the GENERATE function and sent to Google Gemini
+
 2025-03-10 (55)
  - implement text generation from text prompt using Gemini API
 
