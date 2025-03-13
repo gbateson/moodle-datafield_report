@@ -2798,7 +2798,7 @@ class data_field_report extends data_field_base {
      * @param string $response
      * @return boolean  TRUE if the $response string is a JSON string; Otherwise, FALSE.
      */
-    protected function is_json($response) {
+    public function is_json($response) {
         if (is_string($response)) {
             $response = trim($response); // Remove trailing space.
             if (substr($response, 0, 1) == '{' && substr($response, -1) == '}') {

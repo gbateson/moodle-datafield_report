@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2025-03-13 (59)
+ - fix overwriting of fields that updated by AI-generated values
+
 2025-03-13 (57)
  - use newly submitted form values where possible in report fields
 
