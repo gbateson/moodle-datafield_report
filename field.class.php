@@ -620,6 +620,10 @@ class data_field_report extends data_field_base {
                         return $DB->get_field('data_records', 'userid', array('id' => $recordid));
 
                     case 'CURRENT_VALUE':
+                        $formfield = 'field_'.$this->field->id;
+                        if (array_key_exists($formfield, $_POST) && confirm_sesskey()) {
+                            return $_POST[$formfield];
+                        }
                         $params = array('recordid' => $recordid, 'fieldid' => $this->field->id);
                         return $DB->get_field('data_content', 'content', $params);
 
@@ -843,6 +847,35 @@ class data_field_report extends data_field_base {
                 $dataid = $this->valid_dataid_from_recordids($records);
                 $fieldid = $this->valid_fieldid($dataid, $field);
 
+                if (is_array($records) && count($records) == 1) {
+                    $records = reset($records);
+                }
+
+                // Check if we should get the value from the incoming form data.
+                if (is_scalar($records) && $records == $recordid) {
+                    if (($data = data_submitted()) && confirm_sesskey()) {
+                        $formfield = 'field_'.$fieldid;
+                        if (property_exists($data, $formfield)) {
+                            $fieldexists = true;
+                        } else {
+                            $formfield = 'field_'.$fieldid.'_file';
+                            if (property_exists($data, $formfield)) {
+                                $fieldexists = true;
+                            } else {
+                                $fieldexists = false;
+                            }
+                        }
+                        if ($fieldexists) {
+                            $fieldvalue = $data->$formfield;
+                            if ($multiple) {
+                                return [$fieldvalue];
+                            } else {
+                                return $fieldvalue;
+                            }
+                        }
+                    }
+                }
+
                 list($select, $params) = $DB->get_in_or_equal($records);
                 $select = "fieldid = ? AND recordid $select";
                 array_unshift($params, $fieldid);
@@ -888,7 +921,7 @@ class data_field_report extends data_field_base {
      * @return integer
      */
     protected function compute_get_files($recordid, $arguments, $default='CURRENT_RECORDS', $multiple=true) {
-        global $DB;
+        global $CFG, $DB, $USER;
 
         // Get the field values, which are actually records form the "data_content" table.
         if ($files = $this->compute_get_values($recordid, $arguments, $default, true)) {
@@ -904,40 +937,47 @@ class data_field_report extends data_field_base {
 
             foreach ($files as $contentid => $filename) {
 
-                // Ensure that the context is the right one for this contentid.
-                // We expect $contextid to be equal to $this->context->id.
-                $select = 'ctx.id';
-                $from = [
-                    '{data_content} dc',
-                    '{data_records} dr',
-                    '{course_modules} cm',
-                    '{modules} m',
-                    '{context} ctx'
-                ];
-                $from = implode(',', $from);
-                $where = [
-                    'dc.id = ?',
-                    'dc.recordid = dr.id',
-                    'dr.dataid = cm.instance',
-                    'cm.module = m.id',
-                    'm.name = ?',
-                    'cm.id = ctx.instanceid',
-                    'ctx.contextlevel = ?'
-                ];
-                $where = implode(' AND ', $where);
-                $params = [$contentid, 'data', CONTEXT_MODULE];
-                $sql = "SELECT $select FROM $from WHERE $where";
-                $contextid = $DB->get_field_sql($sql, $params);
-
-                // As a fallback, we can use the context of the current database activity.
-                if (empty($contextid)) {
-                    $contextid = $this->context->id;
+                if ($contentid == 0) {
+                    // This is a draft file from an add/edit form.
+                    $usercontextid = context_user::instance($USER->id)->id;
+                    $files[$contentid] = $fs->get_directory_files($usercontextid, 'user', 'draft', $filename, '/');
+                    $files[$contentid] = reset($files[$contentid]);
+                } else {
+                    // Ensure that the context is the right one for this contentid.
+                    // We expect $contextid to be equal to $this->context->id.
+                    $select = 'ctx.id';
+                    $from = [
+                        '{data_content} dc',
+                        '{data_records} dr',
+                        '{course_modules} cm',
+                        '{modules} m',
+                        '{context} ctx'
+                    ];
+                    $from = implode(',', $from);
+                    $where = [
+                        'dc.id = ?',
+                        'dc.recordid = dr.id',
+                        'dr.dataid = cm.instance',
+                        'cm.module = m.id',
+                        'm.name = ?',
+                        'cm.id = ctx.instanceid',
+                        'ctx.contextlevel = ?'
+                    ];
+                    $where = implode(' AND ', $where);
+                    $params = [$contentid, 'data', CONTEXT_MODULE];
+                    $sql = "SELECT $select FROM $from WHERE $where";
+                    $contextid = $DB->get_field_sql($sql, $params);
+    
+                    // As a fallback, we can use the context of the current database activity.
+                    if (empty($contextid)) {
+                        $contextid = $this->context->id;
+                    }
+    
+                    // Fetch the file object represetning this file.
+                    $files[$contentid] = $fs->get_file(
+                        $contextid, $component, $filearea, $contentid, $filepath, $filename
+                    );
                 }
-
-                // Fetch the file object represetning this file.
-                $files[$contentid] = $fs->get_file(
-                    $contextid, $component, $filearea, $contentid, $filepath, $filename
-                );
             }
 
             // Remove any missing files.
@@ -2696,12 +2736,22 @@ class data_field_report extends data_field_base {
 
     /**
      * GENERATE(type, provider, prompt, files=NULL)
+     *
      * Send the prompt and files (optional) to the AI provider in order to
      * generate content of the required type ("text", "image", "audio", "video").
      *
-     * @param integer $recordid
-     * @param array $arguments
-     * @return array or scalar value
+     * This method processes AI generation requests by:
+     * - Extracting the AI provider, model, API key, and prompt from the provided arguments.
+     * - Identifying whether the provider is a core AI service in Moodle or an external service.
+     * - Routing the request to the appropriate AI generation method
+     *   (generate_core, generate_openai, generate_gemini, or generate).
+     *
+     * The method supports multiple AI providers, including OpenAI, Gemini, and custom providers.
+     * 
+     * @param int $recordid The ID of the record for which the AI generation is being computed.
+     * @param array $arguments An array of arguments containing the type, provider, prompt, and files.
+     *
+     * @return mixed The generated response from the AI provider.
      */
     protected function compute_generate($recordid, $arguments) {
         global $USER;
@@ -2721,172 +2771,25 @@ class data_field_report extends data_field_base {
 
         // Extract provider details.
         list($name, $model, $key, $url, $headers, $postparams) = $provider;
+        $name = strtolower($name);
+
+        // Cache the role for the AI assistant.
+        $role = 'Act as an expert assessor of work submitted by students.';
 
         if (in_array($name, $this->get_core_providers())) {
-            $manager = new \core_ai\manager();
-            $action = '\\core_ai\\aiactions\\generate_'.$type;
-            $action = new $action(
-                userid: $USER->id,
-                contextid: $this->context->id,
-                prompttext: $prompt
-            );
-            $response = $manager->process_action($action);
-            $responsedata = $response->get_response_data();
-            return $responsedata['generatedcontent'];
+            return $this->generate_core($type, $prompt);
         }
 
         if ($name == 'openai') {
-            $url = 'https://api.openai.com/v1/chat/completions';
-            $headers = [
-                'Authorization: Bearer '.$key,
-                'Content-Type: application/json',
-            ];
-            $role = 'Act as an expert assessor of work submitted by students.';
-            $postparams = [
-                'model' => 'gpt-4',
-                'messages' => [
-                    (object)['role' => 'system', 'content' => $role],
-                    (object)['role' => 'user', 'content' => $prompt],
-                ],
-            ];
-            $curl = new \curl();
-            $curl->setHeader($headers);
-            $response = $curl->post($url, json_encode($postparams));
-            //$response = '{ "id": "chatcmpl-B8yozN73Yvfe1wjp01tQPCGWd3CqH", "object": "chat.completion", "created": 1741480121, "model": "gpt-4-0613", "choices": [ { "index": 0, "message": { "role": "assistant", "content": "Thank you for your work. Your sentence structure does need some improvements so your point can be more clearly understood. You should use the phrase \"I was born\" instead of \"I have born\". Additionally, when describing what you like about Kochi, proper conjunctions and articles can help the sentence flow better. For example, you might want to write, \"which I love for its tasty food and expansive nature\". Putting it all together, a corrected version of your sentence would be: \"I was born in Osaka, but now I live in Kochi, which I love for its tasty food and expansive nature.\" Keep it up. Writing becomes smoother with practice, so don\'t be disheartened!", "refusal": null }, "logprobs": null, "finish_reason": "stop" } ], "usage": { "prompt_tokens": 53, "completion_tokens": 142, "total_tokens": 195, "prompt_tokens_details": { "cached_tokens": 0, "audio_tokens": 0 }, "completion_tokens_details": { "reasoning_tokens": 0, "audio_tokens": 0, "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0 } }, "service_tier": "default", "system_fingerprint": null } ';
-            if ($curl->error) {
-                return get_string('Error').get_string('labelsep').$response;
-            }
-
-            // Force array structure of response.
-            if ($this->is_json($response)) {
-                $response = json_decode($response, true);
-            }
-            return ($response['choices'][0]['message']['content'] ?? '');
+            return $this->generate_openai($model, $key, $role, $prompt);
         }
 
         if ($name == 'gemini') {
-            $baseurl='https://generativelanguage.googleapis.com/v1beta';
-            $filesurl = 'https://generativelanguage.googleapis.com/upload/v1/files';
-
-            // Get available models
-            if (empty($model)) {
-                $curl = new \curl();
-                $curl->setHeader(['Content-Type: application/json']);
-                $response = $curl->get("$baseurl/models", ['key' => $key]);
-                if ($curl->error) {
-                    return get_string('Error').get_string('labelsep').$response;
-                }
-                $response = json_decode($response, true);
-                if ($models = array_key_exists('models', $response)) {
-                    $models = $response['models'];
-                }
-                if (is_array($models) ) {
-                    // Reduce each model object to just a name.
-                    foreach ($models as $m => $model) {
-                        $name = '';
-                        if (preg_match('/(pro|flash)(-(latest|lite))?$/', $model['name'])) {
-                            if (array_key_exists('supportedGenerationMethods', $model)) {
-                                if (in_array('generateContent', $model['supportedGenerationMethods'])) {
-                                    $name = $model['name'];
-                                }
-                            }
-                        }
-                        $models[$m] = $name;
-                    }
-                    // Select the name of the first non-empty model.
-                    $models = array_filter($models);
-                    $model = reset($models);
-                }
-            }
-
-            if (is_string($model)) {
-                $model = trim($model);
-            } else {
-                $model = ''; // Shouldn't happen !!
-            }
-
-            // Regex to match the Gemini model.
-            // $1: "models/" (optional)
-            // $2: "gemini-" (optional)
-            // $3: version e.g. 1.5 or 2.0
-            // $4: name e.g. -pro, -flash, -flash-lite
-            $search = '/^(models\/)?(gemini-)?(\d+\.\d+)(-[a-z-]+)?$/';
-            if (preg_match($search, $model, $match)) {
-                $model = 'models/gemini-'.$match[3];
-                if ($match[4]) {
-                    $model .= $match[4];
-                } else {
-                    $model .= '-pro';
-                }
-            } else {
-                $model = 'models/gemini-1.5-pro';
-                //$model = 'models/gemini-1.5-flash';
-                //$model = 'models/gemini-2.0-flash';
-                //$model = 'models/gemini-2.0-flash-list';
-            }
-
-            // https://ai.google.dev/api/generate-content
-            // Create a "Blob"
-            $parts = [];
-            $parts[] = ['text' => $prompt];
-            if ($files) {
-                if (is_scalar($files) || is_object($files)) {
-                    $files = [$files];
-                }
-                foreach ($files as $file) {
-                    $parts[] = ['inline_data' => [
-                        'mime_type' => $file->get_mimetype(),
-                        'data' => base64_encode($file->get_content()),
-                    ]];
-                }
-            }
-
-            // Use selected model to generate content.
-            $url = "$baseurl/$model:generateContent";
-            $postparams = ['contents' => [['parts' => $parts]]];
-            $curl = new \curl();
-            $curl->setHeader(['Content-Type: application/json']);
-            $response = $curl->post("$url?key=$key", json_encode($postparams));
-            if ($curl->error) {
-                return get_string('Error').get_string('labelsep').$response;
-            }
-            if ($this->is_json($response)) {
-                $response = json_decode($response, true);
-            }
-            if (array_key_exists('candidates', $response)) {
-                return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
-            }
-            if (array_key_exists('error', $response)) {
-                return ($response['error']['message'] ?? '');
-            }
-            return get_string('Error').get_string('labelsep').'Unrecognized response structure ('.array_keys($response).')';
+            return $this->generate_gemini($model, $key, $role, $prompt, $files);
         }
 
-        // $name is not recognized by this plugin.
-        // Use $name, $model, $key, $url, $headers, $postparams, $return
-        // to send request and return result
-        $curl = new \curl();
-        $curl->setHeader($headers);
-        $response = $curl->post($url, json_encode($postparams));
-        if ($this->is_json($response)) {
-            $response = json_decode($response, true);
-        }
-        if (is_string($return)) {
-            $return = explode(',', $return);
-        }
-        if (is_array($return)) {
-            while (count($return)) {
-                $key = array_shift($return);
-                if (array_key_exists($key, $response)) {
-                    $response = $response[$key];
-                }
-            }
-        }
-        if (is_array($return)) {
-            return implode(', ', $return);
-        } else {
-            return $response;
-        }
+        $return = $this->compute($recordid, array_shift($arguments));
+        return $this->generate($model, $key, $url, $headers, $postparams, $return, $role, $prompt);
     }
 
     /**
@@ -2921,6 +2824,366 @@ class data_field_report extends data_field_base {
             $type = reset($validtypes);
         }
         return $type;
+    }
+
+    /**
+     * Generates AI content using Moodle's core AI functionality.
+     *
+     * This method utilizes Moodle's AI manager to process a generation request 
+     * using the specified AI action type. It creates an AI action instance, 
+     * submits it for processing, and retrieves the generated content.
+     *
+     * @param string $type The AI action type (e.g., 'text', 'summary') used for generation.
+     * @param string $prompt The prompt text sent to the AI model for processing.
+     *
+     * @return string The generated content returned by the AI model.
+     */
+    protected function generate_core($type, $prompt) {
+        global $USER;
+        $manager = new \core_ai\manager();
+        $action = '\\core_ai\\aiactions\\generate_'.$type;
+        $action = new $action(
+            userid: $USER->id,
+            contextid: $this->context->id,
+            prompttext: $prompt
+        );
+        $response = $manager->process_action($action);
+        $responsedata = $response->get_response_data();
+        return $responsedata['generatedcontent'];
+    }
+
+    /**
+     * Generates AI content using OpenAI's API.
+     *
+     * This method sends a request to OpenAI's Chat Completions API, providing a model, API key, 
+     * role definition, and user prompt. It handles API authentication, sends the request using cURL, 
+     * and extracts the generated response.
+     *
+     * @param string $model The OpenAI model to use (e.g., "gpt-4", "gpt-3.5-turbo").
+     * @param string $key The API key for OpenAI authentication.
+     * @param string $role The system role to guide AI behavior (e.g., "Act as an expert assessor").
+     * @param string $prompt The user-provided prompt to generate AI content.
+     *
+     * @return string The generated content from OpenAI's API or an error message.
+     */
+    protected function generate_openai($model, $key, $role, $prompt) {
+        $baseurl = 'https://api.openai.com/v1';
+        if (empty($model)) {
+            $model = $this->get_openai_model($baseurl, $key);
+        }
+
+        $url = "$baseurl/chat/completions";
+        $headers = [
+            'Authorization: Bearer '.$key,
+            'Content-Type: application/json',
+        ];
+        $postparams = [
+            'model' => $model,
+            'messages' => [
+                (object)['role' => 'system', 'content' => $role],
+                (object)['role' => 'user', 'content' => $prompt],
+            ],
+        ];
+        $curl = new \curl();
+        $curl->setHeader($headers);
+        $response = $curl->post($url, json_encode($postparams));
+        if ($curl->error) {
+            return get_string('error').get_string('labelsep', 'langconfig').$response;
+        }
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+        if (array_key_exists('choices', $response)) {
+            return ($response['choices'][0]['message']['content'] ?? '');
+        }
+        $error = 'Unrecognized response structure ('.implode(',', array_keys($response)).')';
+        return get_string('error').get_string('labelsep', 'langconfig').$error;
+    }
+
+    /**
+     * Retrieves the preferred OpenAI model for text generation.
+     *
+     * This method queries OpenAI's API to fetch the list of available models and applies 
+     * filtering criteria to select a suitable model. It removes models with specific 
+     * naming patterns (e.g., preview versions, numeric suffixes) and prioritizes 
+     * valid GPT models for content generation.
+     *
+     * @param string $baseurl The base URL of the OpenAI API.
+     * @param string $key The API key for OpenAI authentication.
+     *
+     * @return string The selected OpenAI model name (e.g., "gpt-4o") or a default model if none are found.
+     */
+    protected function get_openai_model($baseurl, $key) {
+        $curl = new \curl();
+        $curl->setHeader([
+            'Authorization: Bearer '.$key,
+            'Content-Type: application/json',
+        ]);
+        $response = $curl->get("$baseurl/models");
+
+        if ($curl->error) {
+            return get_string('error').get_string('labelsep', 'langconfig').$response;
+        }
+    
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+
+        if (array_key_exists('data', $response)) {
+            $models = $response['data'];
+            foreach ($models as $i => $model) {
+                if (array_key_exists('id', $model)) {
+                    if (preg_match('/\d+-\d+-\d+$/', $model['id'])) {
+                        $models[$i] = null;
+                        continue;
+                    }
+                    if (preg_match('/-\d+$/', $model['id'])) {
+                        $models[$i] = null;
+                        continue;
+                    }
+                    if (preg_match('/(16k|latest|instruct|preview|turbo)$/', $model['id'])) {
+                        $models[$i] = null;
+                        continue;
+                    }
+                    if (preg_match('/^(chat)?gpt/', $model['id'])) {
+                        $models[$i] = $model['id'];
+                    } else {
+                        $models[$i] = null;
+                    }
+                }
+            }
+            $models = array_filter($models);
+            asort($models);
+        } else {
+            $models = [];
+        }
+
+        if (count($models)) {
+            return trim(reset($models));
+        } else {
+            return 'gpt-4o';
+        }
+    }
+
+    /**
+     * Generates AI content using Google's Gemini API.
+     *
+     * This method interacts with Google's Generative Language API to generate content 
+     * based on the provided prompt and optional files. It selects a valid Gemini model, 
+     * constructs the request payload, and sends it using cURL. The response is parsed 
+     * and returned as a text string.
+     *
+     * @param string $model The Gemini model to use (e.g., "models/gemini-1.5-pro").
+     * @param string $key The API key for authentication with the Gemini API.
+     * @param string $role The role instruction for the AI model (not explicitly used by Gemini).
+     * @param string $prompt The prompt text sent to the AI for content generation.
+     * @param mixed $files Optional files to be included in the request (can be a single file or an array of files).
+     *
+     * @return string The generated response from the Gemini API or an error message.
+     */
+    protected function generate_gemini($model, $key, $role, $prompt, $files) {
+        global $DB;
+        $baseurl='https://generativelanguage.googleapis.com/v1beta';
+
+        // Get default model.
+        if (empty($model)) {
+            $model = $this->get_gemini_model($baseurl, $key);
+        }
+
+        if (is_string($model)) {
+            $model = trim($model);
+        } else {
+            $model = ''; // Shouldn't happen !!
+        }
+
+        // Regex to match the Gemini model.
+        // $1: "models/" (optional)
+        // $2: "gemini-" (optional)
+        // $3: version e.g. 1.5 or 2.0
+        // $4: name e.g. -pro, -flash, -flash-lite
+        $search = '/^(models\/)?(gemini-)?(\d+\.\d+)(-[a-z-]+)?$/';
+        if (preg_match($search, $model, $match)) {
+            $model = 'models/gemini-'.$match[3];
+            if ($match[4]) {
+                $model .= $match[4];
+            } else {
+                $model .= '-pro';
+            }
+        } else {
+            $model = 'models/gemini-1.5-pro';
+            //$model = 'models/gemini-1.5-flash';
+            //$model = 'models/gemini-2.0-flash';
+            //$model = 'models/gemini-2.0-flash-list';
+        }
+
+        // https://ai.google.dev/api/generate-content
+        // Create a "Blob"
+        $parts = [];
+        $parts[] = ['text' => $prompt];
+        if ($files) {
+            if (is_scalar($files) || is_object($files)) {
+                $files = [$files];
+            }
+            foreach ($files as $file) {
+                $parts[] = ['inline_data' => [
+                    'mime_type' => $file->get_mimetype(),
+                    'data' => base64_encode($file->get_content()),
+                ]];
+            }
+        }
+
+        // Use selected model to generate content.
+        $url = "$baseurl/$model:generateContent";
+        $postparams = ['contents' => [['parts' => $parts]]];
+        $curl = new \curl();
+        $curl->setHeader(['Content-Type: application/json']);
+        $response = $curl->post("$url?key=$key", json_encode($postparams));
+        if ($curl->error) {
+            return get_string('error').get_string('labelsep', 'langconfig').$response;
+        }
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+        if (array_key_exists('candidates', $response)) {
+            return ($response['candidates'][0]['content']['parts'][0]['text'] ?? '');
+        }
+        if (array_key_exists('error', $response)) {
+            return ($response['error']['message'] ?? '');
+        }
+        $error = 'Unrecognized response structure ('.array_keys($response).')';
+        return get_string('error').get_string('labelsep', 'langconfig').$error;
+    }
+
+    /**
+     * Retrieves the preferred Gemini model available for AI content generation.
+     *
+     * This method sends a request to the Gemini API to fetch a list of available models.
+     * It filters the models based on their support for content generation and selects
+     * the first valid model. If no valid model is found, a default model (`models/gemini-1.5-pro`)
+     * is returned.
+     *
+     * The function performs the following steps:
+     * - Makes an HTTP request to fetch available models from the Gemini API.
+     * - Decodes the JSON response and extracts valid models that support `generateContent`.
+     * - Filters and selects the first valid model, applying regex to normalize its name.
+     * - Ensures a fallback model is used if no valid model is found.
+     *
+     * @param string $baseurl
+     * @param string API $key for Gemini
+     * @return string The name of the selected Gemini model, e.g., `models/gemini-1.5-pro`.
+     */
+    protected function get_gemini_model($baseurl, $key) {
+
+        $curl = new \curl();
+        $curl->setHeader(['Content-Type: application/json']);
+        $response = $curl->get("$baseurl/models?key=$key");
+        
+        if ($curl->error) {
+            return get_string('error').get_string('labelsep', 'langconfig').$response;
+        }
+    
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+    
+        if ($models = array_key_exists('models', $response)) {
+            $models = $response['models'];
+        }
+    
+        if (is_array($models)) {
+            // Reduce each model object to just a name.
+            foreach ($models as $m => $model) {
+                $name = '';
+                if (empty($model['name'])) {
+                    continue;
+                }
+                if (preg_match('/(pro|flash)(-(latest|lite))?$/', $model['name'])) {
+                    if (array_key_exists('supportedGenerationMethods', $model)) {
+                        if (in_array('generateContent', $model['supportedGenerationMethods'])) {
+                            $name = $model['name'];
+                        }
+                    }
+                }
+                $models[$m] = $name;
+            }
+    
+            // Select the name of the first non-empty model.
+            $models = array_filter($models);
+            $model = reset($models);
+        } else {
+            $model = null;
+        }
+    
+        if (is_string($model)) {
+            $model = trim($model);
+        } else {
+            $model = ''; // Shouldn't happen !!
+        }
+    
+        // Regex to match and format the Gemini model.
+        // $1: "models/" (optional)
+        // $2: "gemini-" (optional)
+        // $3: version e.g. 1.5 or 2.0
+        // $4: name e.g. -pro, -flash, -flash-lite
+        $search = '/^(models\/)?(gemini-)?(\d+\.\d+)(-[a-z-]+)?$/';
+        if (preg_match($search, $model, $match)) {
+            $model = 'models/gemini-'.$match[3];
+            if ($match[4]) {
+                $model .= $match[4];
+            } else {
+                $model .= '-pro';
+            }
+        } else {
+            $model = 'models/gemini-1.5-pro';
+            //$model = 'models/gemini-1.5-flash';
+            //$model = 'models/gemini-2.0-flash';
+            //$model = 'models/gemini-2.0-flash-lite';
+        }
+    
+        return $model;
+    }
+
+    /**
+     * Sends an AI generation request to a specified AI provider and processes the response.
+     *
+     * This method is a generic handler for sending requests to an AI provider's API.
+     * It posts the request using cURL, decodes the JSON response, and extracts 
+     * the relevant data based on the specified return keys.
+     *
+     * @param string $model The AI model being used for generation.
+     * @param string $key The API key for authentication with the AI provider.
+     * @param string $url The API endpoint to send the request to.
+     * @param array $headers An array of HTTP headers to include in the request.
+     * @param array $postparams The request payload to send to the AI API.
+     * @param mixed $return The key or comma-separated list of keys to extract from the API response.
+     * @param string $role The role instruction for the AI model (not explicitly used in this method).
+     * @param string $prompt The text prompt sent to the AI model for content generation.
+     *
+     * @return string The extracted AI-generated content or the full response if no specific key is found.
+     */
+    protected function generate($model, $key, $url, $headers, $postparams, $return, $role, $prompt) {
+        $curl = new \curl();
+        $curl->setHeader($headers);
+        $response = $curl->post($url, json_encode($postparams));
+        if ($this->is_json($response)) {
+            $response = json_decode($response, true);
+        }
+        if (is_string($return)) {
+            $return = explode(',', $return);
+        }
+        if (is_array($return)) {
+            while (count($return)) {
+                $key = array_shift($return);
+                if (array_key_exists($key, $response)) {
+                    $response = $response[$key];
+                }
+            }
+        }
+        if (is_array($response)) {
+            return implode(', ', $response);
+        } else {
+            return $response;
+        }
     }
 
     /**
@@ -3242,7 +3505,7 @@ class data_field_report extends data_field_base {
      *
      * @param mixed $database
      * @param mixed $field
-     * @return mixed fieldid OR null
+     * @return mixed field id OR null
      */
     protected function valid_fieldid($database, $field) {
         global $DB;
