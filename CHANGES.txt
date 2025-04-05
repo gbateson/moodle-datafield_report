@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2025-04-05 (60)
+ - add JS to expand/contract textarea height to match content
+
 2025-03-13 (59)
  - fix overwriting of fields that updated by AI-generated values
 

@@ -457,6 +457,8 @@ class data_field_report extends data_field_base {
         $params = array('class' => 'bg-light border border-dark rounded mx-0 my-1 py-0 px-2');
         $data[$name] = html_writer::tag('div', $data[$name], $params);
 
+        // Javascript to fix the body id (and possibly  other stuff)
+        data_field_admin::require_js("/mod/data/field/admin/mod.html.js", true);
         data_field_admin::require_js('/mod/data/field/report/templates/template.js', true);
 
         return $data;
@@ -2800,12 +2802,19 @@ class data_field_report extends data_field_base {
      */
     public function is_json($response) {
         if (is_string($response)) {
+            if (function_exists('json_validate')) {
+                return json_validate($response); // PHP >= 8.3.
+            }
             $response = trim($response); // Remove trailing space.
             if (substr($response, 0, 1) == '{' && substr($response, -1) == '}') {
                 return true;
             }
             if (substr($response, 0, 1) == '[' && substr($response, -1) == ']') {
                 return true;
+            }
+            // Otherwise, try to decode it and check for errors.
+            if (json_decode($response)) {
+                return (json_last_error() === JSON_ERROR_NONE);
             }
         }
         return false;
@@ -3050,7 +3059,8 @@ class data_field_report extends data_field_base {
         if (array_key_exists('error', $response)) {
             return ($response['error']['message'] ?? '');
         }
-        $error = 'Unrecognized response structure ('.array_keys($response).')';
+        $error = join(', ', array_keys($response));
+        $error = 'Unrecognized response structure ('.$error.')';
         return get_string('error').get_string('labelsep', 'langconfig').$error;
     }
 
@@ -3124,7 +3134,7 @@ class data_field_report extends data_field_base {
         // $1: "models/" (optional)
         // $2: "gemini-" (optional)
         // $3: version e.g. 1.5 or 2.0
-        // $4: name e.g. -pro, -flash, -flash-lite
+        // $4: name e.g. -pro, -flash, -flash-lite (optional)
         $search = '/^(models\/)?(gemini-)?(\d+\.\d+)(-[a-z-]+)?$/';
         if (preg_match($search, $model, $match)) {
             $model = 'models/gemini-'.$match[3];
