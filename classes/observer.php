@@ -106,7 +106,6 @@ class datafield_report_observer {
                 }
             }
 
-
             list($search, $params) = $DB->get_in_or_equal(array_keys($fields));
             if ($contents = $DB->get_records_select('data_content', "fieldid $search", $params)) {
 

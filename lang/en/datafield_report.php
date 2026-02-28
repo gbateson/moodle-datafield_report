@@ -81,6 +81,7 @@ $string['onevalue'] = '1 value';
 $string['onevote'] = '1 vote';
 $string['outputformat_help'] = 'The format of this field on the "View list" and "View single" templates.';
 $string['outputformat'] = 'Output format';
+$string['points'] = 'pts';
 $string['reducearrayresult'] = 'Oops! The "{$a->template}" value for the "{$a->fieldname}" field returns an array.<br>Use one of the aggregate functions to reduce the array to a single string or value.';
 $string['reportfieldintroduction'] = 'On this page, you can define the rules to format this field for input and output. The formats are specified using functions, in a similar way to how values are calculated in a spreadsheet program, such as Excel. Details of the functions are available in the "Mini manual" at the bottom of this page.';
 $string['reportfieldfunctions'] = '
@@ -140,8 +141,14 @@ $string['reportfieldfunctions'] = '
 *   GET_DATABASE(database=CURRENT_DATABASE, course=CURRENT_COURSE)
 :   return a single dataid (i.e. the id of a record in the "data" table)
 
+*   GET_INTRO(selector, database=CURRENT_DATABASE)
+:   return all, or part, of the intro text in a database activity
+
 *   GET_FIELD(field, database=CURRENT_DATABASE)
 :   return a single field id
+
+*   GET_PARAM(param, field, database=CURRENT_DATABASE)
+:   return the value of a field parameter (param1-5)
 
 *   GET_RECORD(database=CURRENT_DATABASE, field, value)
 :   return a single record id

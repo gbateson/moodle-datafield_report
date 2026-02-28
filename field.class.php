@@ -81,7 +81,7 @@ class data_field_report extends data_field_base {
      *
      * @var array|null List of AI provider names or `null` if not yet initialized.
      */
-     public $providers = null;
+    public $providers = null;
 
     const REGEXP_FUNCTION_START = '/^\s*(\w+)\s*\(/s';
     const REGEXP_FUNCTION_END = '/^\s*\)/s';
@@ -96,6 +96,13 @@ class data_field_report extends data_field_base {
     const KATAKANA_FULL_STRING = '/^[ \x{3000}-\x{303F}\x{30A0}-\x{30FF}]+$/u';
     const KATAKANA_HALF_STRING = '/^[ \x{3000}-\x{303F}\x{31F0}-\x{31FF}\x{FF61}-\x{FF9F}]+$/u';
     const ROMAJI_STRING = '/^( |(t?chi|s?shi|t?tsu)|((b?by|t?ch|hy|jy|k?ky|p?py|ry|s?sh|s?sy|w|y)[auo])|((b?b|d|f|g|h|j|k?k|m|n|p?p|r|s?s|t?t|z)[aiueo])|[aiueo]|[mn])+$/i';
+
+    /**
+     * Define the threshold for switching from inline data to the Files API.
+     * 20MB is the standard limit for inline base64 content.
+     */
+    const GEMINI_MAX_REQUEST_SIZE = 20971520;
+    const OPENAI_MAX_REQUEST_SIZE = 20971520;
 
     /**
      * generate HTML to display icon for this field type on the "Fields" page
@@ -238,14 +245,26 @@ class data_field_report extends data_field_base {
             foreach ($arguments as $a => $argument) {
                 $argument = $this->compute($recordid, $argument);
                 if (is_array($argument)) {
-                    $msg =  get_string($template, 'data');
-                    $msg = (object)array('template' =>$msg,
+                    // We don't expect the computed result to be an array.
+                    $strman = get_string_manager();
+                    if ($strman->string_exists($template, 'datafield_report')) {
+                        $msg = get_string($template, 'datafield_report');
+                    } else if ($strman->string_exists($template, 'data')) {
+                        $msg = get_string($template, 'data');
+                    } else {
+                        $msg = $template;
+                    }
+                    $msg = (object)array('template' => $msg,
                                          'fieldname' => $this->field->name);
                     $msg = get_string('reducearrayresult', 'datafield_report', $msg);
                     $arguments[$a] = $msg.html_writer::alist($argument);
                 } else {
+                    // Object or scalar.
                     $arguments[$a] = $argument;
                 }
+            }
+            if (count($arguments) == 1) {
+                return reset($arguments);
             }
             return implode('', $arguments);
         } else {
@@ -405,7 +424,6 @@ class data_field_report extends data_field_base {
             $content->id = $DB->insert_record('data_content', $content);
         }
     }
-
 
     /**
      * Return the plugin configs for external functions.
@@ -585,11 +603,11 @@ class data_field_report extends data_field_base {
      */
     protected function compute($recordid, $argument, $default=null) {
         global $CFG, $DB, $USER;
-        if ($argument === null && is_string($default)) {
+        if ($argument === null && is_scalar($default)) {
             $argument = (object)array('type' => 'constant',
                                       'value' => $default);
         }
-        if ($argument === null || is_string($argument)) {
+        if ($argument === null || is_scalar($argument)) {
             return $argument;
         }
         if (is_object($argument) && property_exists($argument, 'type')) {
@@ -671,6 +689,12 @@ class data_field_report extends data_field_base {
                     case 'CURRENT_TEACHERS':
                         return array_intersect($this->valid_userids(),
                                                $this->valid_teacherids());
+
+                    case 'TRUE':
+                        return true;
+
+                    case 'FALSE':
+                        return false;
 
                     case 'DEFAULT_NAME_FORMAT':
                         if (empty($CFG->fullnamedisplay)) {
@@ -793,29 +817,587 @@ class data_field_report extends data_field_base {
         return 0; // We couldn't find a matching activity.
     }
 
+    // ARRAY(
+    //     ARRAY_ITEM("aigrade", ARRAY(
+    //         ARRAY_ITEM("value", GET_VALUE("ai-grade")),
+    //         ARRAY_ITEM("target", GET_VALUE("ai-grade-max")),
+    //         ARRAY_ITEM("weighting", "20"),
+    //     )),
+    //     ARRAY_ITEM("totalwordcount", ARRAY(
+    //         ARRAY_ITEM("value", WORDCOUNT("ai-transcript")),
+    //         ARRAY_ITEM("target", "100"),
+    //         ARRAY_ITEM("weighting", "50"),
+    //     )),
+    //     ARRAY_ITEM("uniquewordcount", ARRAY(
+    //         ARRAY_ITEM("value", UNIQUEWORDCOUNT("ai-transcript")),
+    //         ARRAY_ITEM("target", "80"),
+    //         ARRAY_ITEM("weighting", "10"),
+    //     )),
+    //     ARRAY_ITEM("worddensity", ARRAY(
+    //         ARRAY_ITEM("value", WORDDENSITY("ai-transcript")),
+    //         ARRAY_ITEM("target", "80"),
+    //         ARRAY_ITEM("weighting", "0"),
+    //     )),
+    //     ARRAY_ITEM("longwordcount", ARRAY(
+    //         ARRAY_ITEM("value", LONGWORDCOUNT("ai-transcript")),
+    //         ARRAY_ITEM("target", "10"),
+    //         ARRAY_ITEM("weighting", "10"),
+    //     )),
+    //     ARRAY_ITEM("speechrate", ARRAY(
+    //         ARRAY_ITEM("value", SPEECHRATE("mediafile", "ai-transcription"),
+    //         ARRAY_ITEM("target", "100"),
+    //         ARRAY_ITEM("weighting", "10"),
+    //     ))
+    // )
+
     /**
-     * compute_rating
-     * RATING(user=CURRENT_USER, database=CURRENT_DATABASE)
+     * compute_autograde
+     * AUTOGRADE(array_of_categories, autogradefield=CURRENT_FIELD, autogrademaxfield=NULL, autogradetextfield=NULL)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return object containing [autograde, autogrademax, autogradetext]
+     */
+    protected function compute_autograde($recordid, $arguments) {
+        global $DB;
+
+        $grade = 0;
+        $grademax = 0;
+        $gradetext = [];
+
+        $strtotal = get_string('total');
+        $labelsep = get_string('labelsep', 'langconfig');
+        $strpoints = get_string('points', 'datafield_report');
+
+        if ($categories = $this->compute($recordid, array_shift($arguments), [])) {
+            foreach ($categories as $catname => $category) {
+                if ($fieldid = $this->valid_fieldid('', "$catname")) {
+                    $params = ['dataid' => $this->data->id, 'id' => $fieldid];
+                    $catname = $DB->get_field('data_fields', 'description', $params);
+                }
+                if (array_key_exists('value', $category)) {
+                    $value = $category['value'];
+                } else if ($fieldid) {
+                    $params = ['recordid' => $recordid, 'fieldid' => $fieldid];
+                    $value = $DB->get_field('data_content', 'content', $params);
+                } else {
+                    $value = 0;
+                }
+                $target = $category['target'] ?? 100;
+                $weighting = $category['weighting'] ?? 1;
+                if ($target) {
+                    $fraction = min(1, ($value / $target));
+                    $subgrade = round($weighting * $fraction, 1);
+                    $gradetext[] = "<b>$catname$labelsep</b>$subgrade $strpoints (= $weighting $strpoints x ($value / $target))";
+                } else {
+                    $fraction = 1;
+                    $subgrade = $weighting;
+                    $gradetext[] = "<b>$catname$labelsep</b>$subgrade $strpoints";
+                }
+                if ($weighting) {
+                    $grade += $subgrade;
+                    $grademax += $weighting;
+                }
+            }
+        }
+
+        if (count($gradetext)) {
+            $gradetext[] = str_repeat('=', 15);
+            $gradetext[] = strtoupper($strtotal).$labelsep."$grade / $grademax";
+        }
+        $gradetext = implode('<br>', $gradetext);
+
+        // Initiate the $autograde results array.
+        $autograde = [];
+
+        // If we are editing, prepare values to update the auto-grade fields.
+        // These values will be allocated after AI generation in:
+        // mod/data/field/action/types/generate/class.php.
+        if ($recordid) {
+            // Get the value for the auto-grade field (if it exists)
+            $this->autograde_add_value(
+                $autograde, $recordid, array_shift($arguments), '', '', $grade, 'CURRENT_FIELD'
+            );
+            // Use the name of the auto-grade field, as the basename for other fields.
+            if ($basename = key($autograde)) {
+                // Get the value for the auto-grade-max field (if it exists)
+                $this->autograde_add_value(
+                    $autograde, $recordid, array_shift($arguments), $basename, '-max', $grademax
+                );
+                // Get the value for the auto-grade-text field (if it exists)
+                $this->autograde_add_value(
+                    $autograde, $recordid, array_shift($arguments), $basename, '-text', $gradetext
+                );
+            }
+        }
+        return (object)$autograde;
+    }
+
+    /**
+     * Adds a calculated auto-grade value to the result set if the target field exists.
+     *
+     * Resolves the target field by argument, basename/suffix, or defaults to the
+     * current field, then assigns the calculated value for later updating.
+     *
+     * @param array  &$autograde Result array to populate with field values.
+     * @param int $recordid Database record ID.
+     * @param mixed $argument Field identifier argument.
+     * @param string $basename Base field name for derived fields.
+     * @param string $suffix Suffix appended to the base field name.
+     * @param mixed $value Calculated value to assign.
+     * @param mixed $default Default value used when no argument is provided.
+     *
+     * @return void (but may update the $autograde array)
+     */
+    protected function autograde_add_value(&$autograde, $recordid, $argument, $basename, $suffix, $value, $default=null) {
+        global $DB;
+        if ($fieldid = $this->compute($recordid, $argument, $default)) {
+            $fieldname = $DB->get_field('data_fields', 'name', ['id' => $fieldid]);
+        } else {
+            if ($basename == '') {
+                $fieldname = $this->field->name;
+                $fieldid = $this->field->id;
+            } else {
+                $fieldname = "$basename$suffix";
+                $fieldid = $this->valid_fieldid('', $fieldname);
+            }
+        }
+        if ($fieldid) {
+            $autograde[$fieldname] = $value;
+        }
+    }
+
+    /**
+     * compute_autorating
+     * AUTORATING(rater, autograde, autogrademax, autogradetext, removeprevious=TRUE)
      *
      * @param array $arguments
      * @param integer $recordid
      * @return float a rating value
      */
-    protected function compute_rating($recordid, $arguments) {
-        global $DB;
-        // NOTE: this function is not finished yet and does nothing
-        $userid = 0;
-        $dataid = 0;
-        if ($user = $this->compute($recordid, array_shift($arguments), 'CURRENT_USER')) {
-            if ($userid = $this->valid_userids($user)) {
-                $userid = reset($userid);
+    protected function compute_autorating($recordid, $arguments) {
+        global $CFG, $DB, $USER;
+
+        require_once($CFG->dirroot.'/rating/lib.php');
+        require_once($CFG->dirroot.'/comment/lib.php');
+
+        $rater = $this->compute($recordid, array_shift($arguments), 0);
+        $grade = $this->compute($recordid, array_shift($arguments), 0);
+        $grademax = $this->compute($recordid, array_shift($arguments), 0);
+        $gradetext = $this->compute($recordid, array_shift($arguments), '');
+        $removeprevious = $this->compute($recordid, array_shift($arguments), 'TRUE');
+
+        // The user being rated is the owner of the current recordid.
+        if ($recordid) {
+            $rateduserid = $DB->get_field('data_records', 'userid', ['id' => $recordid]);
+        } else {
+            $rateduserid = 0;
+        }
+
+        $rater = $this->valid_rater($recordid, $rateduserid, $rater);
+        if (empty($rater)) {
+            // A teacher/admin is trying to rate themselves,
+            // but the database module does not allow that.
+            return '';
+        }
+
+        if (empty($this->data->scale)) {
+            // Ratings are not enabled.
+            $ratingsenabled = false;
+            $ratingvalue = 0;
+            $ratingmax = 0;
+        } else {
+            // Ratings are enabled.
+            $ratingsenabled = true;
+            $ratingmax = intval($this->data->scale);
+            if (empty($grade)) {
+                $grade = 0;
+            } else {
+                $grade = intval($grade);
+            }
+            if (empty($grademax)) {
+                $grademax = $ratingmax;
+            } else {
+                $grademax = intval($grademax);
+            }
+            $ratingvalue = round($ratingmax * ($grade / $grademax), 0);
+        }
+
+        if (empty($this->data->comments)) {
+            $commentsenabled = false;
+        } else {
+            $commentsenabled = true;
+        }
+
+        // Convert "removeprevious" to a boolean flag.
+        if (is_string($removeprevious)) {
+            $removeprevious = strtoupper($removeprevious);
+            $removeprevious = ($removeprevious == "1" ||
+                               $removeprevious == "TRUE" ||
+                               $removeprevious == "YES");
+        } else {
+            $removeprevious = ($removeprevious === 1 ||
+                               $removeprevious === true);
+        }
+
+        // Cache the current (student) user's id.
+        if ($recordid && $rater && ($ratingsenabled || $commentsenabled)) {
+
+            // Cache current user.
+            $user = $USER;
+
+            // Switch $USER to rater.
+            if ($USER->id != $rater->id) {
+                \core\session\manager::set_user($rater);
+            }
+
+            // We wrap the rating/comment code in a try {...}
+            // block to prevent becomming stuck logged in as the
+            // rater if there is a problem. and an error is thrown.
+            try {
+                $rm = new \rating_manager();
+    
+                // If requested, remove previous ratings
+                // and comments for this recordid.
+                if ($removeprevious) {
+                    if ($ratingsenabled) {
+                        $rm->delete_ratings((object)[
+                            'contextid' => $this->context->id,
+                            'component' => 'mod_data',
+                            'ratingarea' => 'entry',
+                            'itemid' => $recordid,
+                        ]);
+                    }
+                    if ($commentsenabled) {
+                        \comment::delete_comments((object)[
+                            'contextid' => $this->context->id,
+                            'component' => 'mod_data',
+                            'commentarea' => 'database_entry',
+                            'itemid' => $recordid,
+                        ]);
+                    }
+                }
+        
+                // Add new rating value.
+                if ($ratingsenabled) {
+                    $rm->add_rating(
+                        // cm, context
+                        $this->cm, $this->context,
+                        // component, ratingarea, itemid
+                        'mod_data', 'entry', $recordid, 
+                        // scaleid (=max value), rating
+                        $this->data->scale, $ratingvalue,
+                        // rateduserid, aggregatemethod
+                        $rateduserid, $this->data->assessed
+                    );
+                }
+        
+                // Add comment, if requested.
+                if ($commentsenabled && $gradetext) {
+                    $comment = new \comment((object)[
+                        'context'   => $this->context,
+                        'component' => 'mod_data',
+                        'area' => 'database_entry',
+                        'itemid' => $recordid,
+                    ]);
+                    $comment->add($gradetext, FORMAT_HTML);
+                }
+            
+            } finally {
+                // Whether or not an exception occurred, we
+                // always switch $USER back to original user.
+                if ($USER->id != $user->id) {
+                    \core\session\manager::set_user($user);
+                }
             }
         }
-        if ($database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE')) {
-            $dataid = $this->valid_dataid($database);
+        return $ratingvalue;
+    }
+
+    /**
+     * compute_get_rater
+     * GET_RATER(rater)
+     *
+     * Get a user who can rate entries in the current database activity.
+     * - The current user is excluded from the list of possible raters.
+     * - If a specific rater is requested via arguments, the function will 
+     *   attempt to match it against the id or common user name/email fields.
+     * - If no specific rater is requested or no match is found,
+     *   the first available rater is returned.
+     *
+     * @param integer $recordid
+     * @param array $arguments
+     * @return stdClass|null A user record for a valid rater,
+     *                       or null if no raters are found.
+     */
+    protected function compute_get_rater($recordid, $arguments) {
+        return $this->compute($recordid, array_shift($arguments), '');
+    }
+
+    /**
+     * Get a user who can rate the given $recordid.
+     */
+    protected function valid_rater($recordid, $rateduserid, $rater=null) {
+        global $DB;
+
+        if (empty($recordid) || empty($rateduserid)) {
+            return null;
         }
-        // see "get_recordrating()" in mod/data/field/template/field.class.php
-        return null;
+
+        static $raters = [];
+        if (array_key_exists($recordid, $raters)) {
+            return $raters[$recordid];
+        }
+
+        // Fetch array of all raters. Usually this is a list of teachers.
+        static $allraters = null;
+        if ($allraters === null) {
+            $allraters = get_users_by_capability($this->context, 'mod/data:rate');
+        }
+        if (empty($allraters)) {
+            return null; // Shouldn't happen !!
+        }
+
+        // Set a null return value in case anything goes wrong.
+        $raters[$recordid] = null;
+
+        // Set the array of availableraters.
+        $availableraters = $allraters;
+
+        // Note, that the owner of the recordid cannot rate their own record,
+        // so they must be removed from the array of available raters.
+        if (array_key_exists($rateduserid, $allraters)) {
+            unset($allraters[$rateduserid]);
+        }
+
+        if (empty($availableraters)) {
+            return null; // This may happen on small sites/courses.
+        }
+
+        // if a specific rater is requested, we try to find them.
+        if ($rater) {
+            if (is_numeric($rater)) {
+                // Numeric rater: treat as user id.
+                $rater = intval($rater);
+                if (array_key_exists($rater, $availableraters)) {
+                    $raters[$recordid] = $availableraters[$rater];
+                    return $raters[$recordid];
+                }
+            } else {
+                // Non-numeric rater: attempt partial match on name fields.
+                $names = [
+                    'username', 'firstname', 'lastname', 'email',
+                    'firstnamephonetic', 'lastnamephonetic', 
+                    'middlename', 'alternatename'
+                ];
+                foreach ($availableraters as $r) {
+                    foreach ($names as $name) {
+                        if (empty($r->$name)) {
+                            continue;
+                        }
+                        if (strpos($r->$name, $rater) !== false) {
+                            $raters[$recordid] = $r;
+                            return $raters[$recordid];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Otherwise, use the first available rater.
+        $raters[$recordid] = reset($availableraters);
+        return $raters[$recordid];
+    }
+
+    /**
+     * compute_longwordcount
+     * LONGWORDCOUNT(langcode, field, database)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_longwordcount($recordid, $arguments) {
+        $langcode = $this->compute($recordid, array_shift($arguments), '');
+        $words = $this->compute_words($recordid, $arguments);
+        $words = array_unique($words);
+
+        $syllable = \datafield_report_syllable::get($langcode);
+        if ($syllable) {
+            $longwords = [];
+            foreach ($words as $word) {
+                $count = $syllable->countSyllablesText($word);
+                if ($count > 2) {
+                    $longwords[$word] = $count;
+                }
+            }
+            return count($longwords);
+        }
+        // Use a different method, such as vowel clusters, to count syllables.
+        // E.g. count_syllables() in "question/type/essayautograde/question.php".
+        return 0;
+    }
+
+    /**
+     * compute_worddensity
+     * WORDDENSITY(field, database)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_worddensity($recordid, $arguments) {
+        $words = $this->compute_words($recordid, $arguments);
+        if (empty($words)) {
+            return 0;
+        }
+        $uniquewords = array_unique($words);
+        return round(count($uniquewords) / count($words) * 100, 0);
+    }
+
+    /**
+     * compute_duration
+     * DURATION(mediafile)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_duration($recordid, $arguments) {
+        if ($file = array_shift($arguments)){
+            if ($file->type == "function") {
+                $file = $this->compute($recordid, $file);
+            } else {
+                $file = $this->compute_get_file($recordid, [$file]);
+            }
+        }
+        if ($file) {
+            return $this->get_duration($file);
+        }
+        return 0;
+    }
+
+    /**
+     * compute_speechrate
+     * SPEECHRATE(duration, text)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_speechrate($recordid, $arguments) {
+        if ($duration = array_shift($arguments)){
+            if ($duration->type == "function") {
+                $duration = $this->compute($recordid, $duration);
+            } else {
+                $duration = $this->compute_get_value($recordid, [$duration]);
+            }
+        }
+        if ($text = array_shift($arguments)){
+            if ($text->type == "function") {
+                $text = $this->compute($recordid, $text);
+            } else {
+                $text = $this->compute_get_value($recordid, [$text]);
+            }
+        }
+        if ($duration && $text) {
+            $wordcount = $this->get_wordcount($text);
+            if ($wordcount && $duration) {
+                // Speech rate as words-per-minute (WPM).
+                return round(60 * ($wordcount / $duration), 0);
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Returns the duration of a media file in seconds.
+     *
+     * @param stored_file $file Moodle file object to analyse.
+     * @return float Media duration in seconds, or 0 if unavailable.
+     */
+    protected function get_duration($file){
+        global $CFG;
+
+        if (empty($file)) {
+            return 0;
+        }
+
+        $basedir = $CFG->dirroot.'/mod/data/field/report';
+        require_once($basedir.'/vendor/getID3/getid3/getid3.php');
+
+        $getID3 = new getID3();
+        $tempfile = $file->copy_content_to_temp();
+        $info = $getID3->analyze($tempfile);
+        @unlink($tempfile);
+
+        if (array_key_exists('playtime_seconds', $info)) {
+            // Duration in seconds (e.g., 125.4).
+            return round($info['playtime_seconds'], 1);
+        }
+        return 0;
+    }
+
+    /**
+     * compute_uniquewordcount
+     * UNIQUEWORDCOUNT(field, database)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_uniquewordcount($recordid, $arguments) {
+        return $this->compute_wordcount($recordid, $arguments, true);
+    }
+
+    /**
+     * compute_wordcount
+     * WORDCOUNT(field, database)
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return integer
+     */
+    protected function compute_wordcount($recordid, $arguments, $unique=false) {
+        $text = $this->compute_get_value($recordid, $arguments);
+        return $this->get_wordcount($text, $unique);
+    }
+
+    /**
+     * compute_words
+     * WORDS(field, database)
+     */
+    protected function compute_words($recordid, $arguments) {
+        $text = $this->compute_get_value($recordid, $arguments);
+        return $this->get_words($text);
+    }
+
+    /**
+     * Returns the number of words in the given text.
+     *
+     * @param string $text   Text to analyse.
+     * @param bool   $unique Whether to count only unique words.
+     * @return int Word count.
+     */
+    protected function get_wordcount($text, $unique=false) {
+        $words = $this->get_words($text);
+        if ($unique) {
+            $words = array_unique($words);
+        }
+        return count($words);
+    }
+
+    /**
+     * Splits text into an array of words using Unicode-aware separators.
+     *
+     * @param string $text Text to split.
+     * @return array List of words.
+     */
+    protected function get_words($text) {
+        if (empty($text)) {
+            return [];
+        }
+        return preg_split('/[\p{Z}\p{Cc}—–]+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
     }
 
     /**
@@ -845,7 +1427,6 @@ class data_field_report extends data_field_base {
 
         if ($field = $this->compute($recordid, array_shift($arguments))) {
             if ($records = $this->compute($recordid, array_shift($arguments), $default)) {
-
                 $dataid = $this->valid_dataid_from_recordids($records);
                 $fieldid = $this->valid_fieldid($dataid, $field);
 
@@ -902,7 +1483,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_file
-     * GET_FILE(field, record)
+     * GET_FILE(field, record=CURRENT_RECORD)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -914,7 +1495,7 @@ class data_field_report extends data_field_base {
 
     /**
      * compute_get_files
-     * GET_FILES(field, records)
+     * GET_FILES(field, records=CURRENT_RECORDS)
      *
      * @param array $arguments
      * @param integer $recordid
@@ -969,12 +1550,12 @@ class data_field_report extends data_field_base {
                     $params = [$contentid, 'data', CONTEXT_MODULE];
                     $sql = "SELECT $select FROM $from WHERE $where";
                     $contextid = $DB->get_field_sql($sql, $params);
-    
+
                     // As a fallback, we can use the context of the current database activity.
                     if (empty($contextid)) {
                         $contextid = $this->context->id;
                     }
-    
+
                     // Fetch the file object represetning this file.
                     $files[$contentid] = $fs->get_file(
                         $contextid, $component, $filearea, $contentid, $filepath, $filename
@@ -1040,6 +1621,168 @@ class data_field_report extends data_field_base {
                 return $this->valid_fieldid($database, $field);
             }
         }
+        return null;
+    }
+
+    /**
+     * compute_get_param
+     * GET_PARAM(param, field, database=CURRENT_DATABASE)
+     * "param" is an integer from 1 to 10, or a param name, e.g. "param4".
+     * "field" is one of the following:
+     *   the numeric id of a field
+     *   a string that matches the name of a field
+     *
+     * @return  the required param value of the specified field.
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return string
+     */
+    protected function compute_get_param($recordid, $arguments) {
+        global $DB;
+        $param = $this->compute($recordid, array_shift($arguments));
+        $field = $this->compute($recordid, array_shift($arguments), 'CURRENT_FIELD');
+        $database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE');
+        if ($dataid = $this->valid_dataid($database)) {
+            if ($fieldid = $this->valid_fieldid($dataid, $field)) {
+                if (substr($param, 0, 5) == 'param') {
+                    $param = substr($param, 5);
+                }
+                if (is_numeric($param)) {
+                    $p = intval($param);
+                    if ($p >= 1 && $p <= 10) {
+                        $param = 'param'.$p;
+                        if ($fieldid == $this->field->id) {
+                            return $this->field->$param;
+                        }
+                        return $DB->get_field('data_fields', $param, ['id' => $fieldid]);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * compute_get_intro
+     * GET_INTRO(lang="en", selector="", database=CURRENT_DATABASE)
+     * "lang" is an Moodle language code. E.g. en.
+     * "selector" is an CSS selector. E.g. div.explanation.
+     * "database" is an database activity that is accessible to the current user.
+     *
+     * @return  the inner text of the required element in the database intro.
+     *
+     * @param array $arguments
+     * @param integer $recordid
+     * @return string
+     */
+    protected function compute_get_intro($recordid, $arguments) {
+        global $DB;
+        $lang = $this->compute($recordid, array_shift($arguments), "en");
+        $selector = $this->compute($recordid, array_shift($arguments));
+        $database = $this->compute($recordid, array_shift($arguments), 'CURRENT_DATABASE');
+        if ($dataid = $this->valid_dataid($database)) {
+            if ($dataid == $this->data->id) {
+                $intro = $this->data->intro;
+            } else {
+                $intro = $DB->get_field('data', 'intro', ['id' => $dataid]);
+            }
+            $intro = $this->extract_html_element($intro, $lang, $selector);
+            // Replace all double quotes with single quotes.
+            $intro = str_replace('"', "'", $intro);
+            return $intro;
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the inner text of the first HTML element matching a CSS selector.
+     * Safely parses Moodle-style HTML and returns an empty string if no match exists.
+     *
+     * @param string $html HTML fragment to search.
+     * @param string $lang A recognized Moodle language code, e.g. "en".
+     * @param string $selector Simple CSS selector (tag, .class, #id, tag.class).
+     * @return string Trimmed inner text, or empty string if not found.
+     */
+    protected function extract_html_element($html, $lang, $selector) {
+
+        $lang = strtolower($lang);
+        if ($lang && $lang != 'en') {
+            if (! get_string_manager()->translation_exists($lang)) {
+                $lang = '';
+            }
+        }
+
+        // Suppress warnings for malformed HTML.
+        if (function_exists("libxml_use_internal_errors")) {
+            libxml_use_internal_errors(true);
+        }
+
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->loadHTML(
+            '<?xml encoding="utf-8" ?>' . $html,
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+
+        $xpath = new \DOMXPath($dom);
+
+        if ($lang) {
+            // Remove multilang elements that do not match the target $lang.
+            $nodes = $xpath->query('//*[@lang and @lang != "' . $lang . '"]');
+            foreach ($nodes as $node) {
+                $node->parentNode->removeChild($node);
+            }
+        }
+
+        if ($selector == '') {
+            // Return entire inner text.
+            return $dom->textContent;
+        }
+
+        // Extract first element that matches selector.
+        if ($xpathquery = $this->css_to_xpath($selector)) {
+            $nodes = $xpath->query($xpathquery);
+            if ($nodes->length) {
+                return trim($nodes->item(0)->textContent);
+            }
+        }
+
+        // The $selector is invalid or did not match anything.
+        return '';
+    }
+
+    /**
+     * Convert simple CSS selectors to XPath.
+     * Supports:
+     *  - tag
+     *  - .class
+     *  - #id
+     *  - tag.class
+     */
+    protected function css_to_xpath($selector) {
+        $selector = trim($selector);
+
+        // #id
+        if (preg_match('/^#([\w\-]+)$/', $selector, $m)) {
+            return "//*[@id='{$m[1]}']";
+        }
+
+        // .class
+        if (preg_match('/^\.([\w\-]+)$/', $selector, $m)) {
+            return "//*[contains(concat(' ', normalize-space(@class), ' '), ' {$m[1]} ')]";
+        }
+
+        // tag.class
+        if (preg_match('/^([\w\-]+)\.([\w\-]+)$/', $selector, $m)) {
+            return "//{$m[1]}[contains(concat(' ', normalize-space(@class), ' '), ' {$m[2]} ')]";
+        }
+
+        // tag only
+        if (preg_match('/^[\w\-]+$/', $selector)) {
+            return "//{$selector}";
+        }
+
+        // Unsupported selector
         return null;
     }
 
@@ -2668,43 +3411,15 @@ class data_field_report extends data_field_base {
     protected function compute_array($recordid, $arguments) {
         $array = array();
         while (count($arguments)) {
-            // Check if next argument is an "ARRAY_ITEM".
-            $arrayitem = $this->is_array_item($arguments[0]);
-
-            // Compute scalar value of this item.
-            $item = $this->compute($recordid, array_shift($arguments));
-            if ($item === null) {
-                continue;
-            }
-            if ($arrayitem && is_array($item)) {
-                foreach ($item as $key => $value) {
-                    $array[$key] = $value;
+            if ($item = $this->compute($recordid, array_shift($arguments))) {
+                if (is_array($item)) {
+                    $array = array_merge($array, $item);
+                } else {
+                    $array[] = $item;
                 }
-            } else {
-                $array[] = $item;
             }
         }
         return $array;
-    }
-
-    /**
-     * is_array_item
-     * check that $item is a function called ARRAY_ITEM function
-     *
-     * @param mixed $item
-     * @return boolean TRUE if $item is an ARRAY_ITEM; otherwise, FALSE.
-     */
-    protected function is_array_item($item) {
-        if (is_object($item)) {
-            if (property_exists($item, 'type') && $item->type == 'function') {
-                if (property_exists($item, 'name') && $item->name == 'ARRAY_ITEM') {
-                    if (property_exists($item, 'arguments') && is_array($item->arguments)) {
-                        return (count($item->arguments) <= 2);
-                    }
-                }
-            }
-        }
-        return false;
     }
 
     /**
@@ -2718,6 +3433,7 @@ class data_field_report extends data_field_base {
      */
     protected function compute_array_item($recordid, $arguments) {
         // We expect $arguments to be an array containing exactly 1 or 2 items.
+
         if (is_array($arguments)) {
             $count = count($arguments);
         } else {
@@ -2726,14 +3442,13 @@ class data_field_report extends data_field_base {
         if ($count == 0) {
             return null; // shouldn't happen !!
         }
-        // Note that the values will be computed later.
         if ($count == 1) {
-            return array_shift($arguments);
+            $key = 0; // A numeric key.
         } else {
             $key = $this->compute($recordid, array_shift($arguments));
-            $value = array_shift($arguments);
-            return array($key => $value);
         }
+        $value = $this->compute($recordid, array_shift($arguments));
+        return [$key => $value];
     }
 
     /**
@@ -2749,7 +3464,7 @@ class data_field_report extends data_field_base {
      *   (generate_core, generate_openai, generate_gemini, or generate).
      *
      * The method supports multiple AI providers, including OpenAI, Gemini, and custom providers.
-     * 
+     *
      * @param int $recordid The ID of the record for which the AI generation is being computed.
      * @param array $arguments An array of arguments containing the type, provider, prompt, and files.
      *
@@ -2783,7 +3498,7 @@ class data_field_report extends data_field_base {
         }
 
         if ($name == 'openai') {
-            return $this->generate_openai($model, $key, $role, $prompt);
+            return $this->generate_openai($model, $key, $role, $prompt, $files);
         }
 
         if ($name == 'gemini') {
@@ -2821,25 +3536,23 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * Ensure the given content type is valid.
+     * Ensure the given AI content type is valid.
      */
     protected function get_valid_type($type) {
         $validtypes = ['text', 'image', 'audio', 'video'];
-        $type = strtolower($type);
-        $i = array_search($type, $validtypes);
+        $i = array_search(strtolower($type), $validtypes);
         if (is_numeric($i)) {
-            $type = $validtypes[$i];
+            return $validtypes[$i];
         } else {
-            $type = reset($validtypes);
+            return reset($validtypes);
         }
-        return $type;
     }
 
     /**
      * Generates AI content using Moodle's core AI functionality.
      *
-     * This method utilizes Moodle's AI manager to process a generation request 
-     * using the specified AI action type. It creates an AI action instance, 
+     * This method utilizes Moodle's AI manager to process a generation request
+     * using the specified AI action type. It creates an AI action instance,
      * submits it for processing, and retrieves the generated content.
      *
      * @param string $type The AI action type (e.g., 'text', 'summary') used for generation.
@@ -2864,21 +3577,62 @@ class data_field_report extends data_field_base {
     /**
      * Generates AI content using OpenAI's API.
      *
-     * This method sends a request to OpenAI's Chat Completions API, providing a model, API key, 
-     * role definition, and user prompt. It handles API authentication, sends the request using cURL, 
+     * This method sends a request to OpenAI's Chat Completions API, providing a model, API key,
+     * role definition, and user prompt. It handles API authentication, sends the request using cURL,
      * and extracts the generated response.
      *
      * @param string $model The OpenAI model to use (e.g., "gpt-4", "gpt-3.5-turbo").
      * @param string $key The API key for OpenAI authentication.
      * @param string $role The system role to guide AI behavior (e.g., "Act as an expert assessor").
      * @param string $prompt The user-provided prompt to generate AI content.
+     * @param mixed $files Optional files to be included in the request (can be a single file or an array of files).
      *
      * @return string The generated content from OpenAI's API or an error message.
      */
-    protected function generate_openai($model, $key, $role, $prompt) {
+    protected function generate_openai($model, $key, $role, $prompt, $files=null) {
+        global $DB;
         $baseurl = 'https://api.openai.com/v1';
+
         if (empty($model)) {
             $model = $this->get_openai_model($baseurl, $key);
+        }
+
+        // Prepare the content array (OpenAI uses an array of objects for multimodal input)
+        $usercontent = [];
+        $usercontent[] = ['type' => 'text', 'text' => $prompt];
+
+        if ($files) {
+            if (is_scalar($files) || is_object($files)) {
+                $files = [$files];
+            }
+
+            $maxsize = self::OPENAI_MAX_REQUEST_SIZE;
+            foreach ($files as $file) {
+                $mimetype = $file->get_mimetype();
+                $filesize = $file->get_filesize();
+
+                if ($filesize <= $maxsize && strpos($mimetype, 'image/') === 0) {
+                    // Small images can be passed inline.
+                    $base64 = base64_encode($file->get_content());
+                    $usercontent[] = [
+                        'type' => 'image_url',
+                        'image_url' => [
+                            'url' => 'data:' . $mimetype . ';base64,' . $base64
+                        ]
+                    ];
+                }  else {
+                    // Large images and non-image files are passed via OpenAI Files API.
+                    $fileid = $this->upload_openai_file($baseurl, $key, $file);
+                    if ($fileid) {
+                        // Note: As of late 2024, Chat Completions supports 'input_file' or
+                        // 'file_id' depending on the specific model version (e.g. gpt-4o).
+                        $usercontent[] = [
+                            'type' => 'input_file',
+                            'input_file' => ['file_id' => $fileid]
+                        ];
+                    }
+                }
+            }
         }
 
         $url = "$baseurl/chat/completions";
@@ -2889,32 +3643,56 @@ class data_field_report extends data_field_base {
         $postparams = [
             'model' => $model,
             'messages' => [
-                (object)['role' => 'system', 'content' => $role],
-                (object)['role' => 'user', 'content' => $prompt],
+                ['role' => 'system', 'content' => $role],
+                ['role' => 'user', 'content' => $usercontent],
             ],
         ];
+
         $curl = new \curl();
         $curl->setHeader($headers);
         $response = $curl->post($url, json_encode($postparams));
+
         if ($curl->error) {
-            return get_string('error').get_string('labelsep', 'langconfig').$response;
+            return get_string('error') . ': ' . $response;
         }
-        if ($this->is_json($response)) {
-            $response = json_decode($response, true);
+
+        $data = json_decode($response, true);
+        if (isset($data['choices'][0]['message']['content'])) {
+            return $data['choices'][0]['message']['content'];
         }
-        if (array_key_exists('choices', $response)) {
-            return ($response['choices'][0]['message']['content'] ?? '');
-        }
+
         $error = 'Unrecognized response structure ('.implode(',', array_keys($response)).')';
         return get_string('error').get_string('labelsep', 'langconfig').$error;
     }
 
     /**
+     * Helper to upload files to OpenAI
+     */
+    protected function upload_openai_file($baseurl, $key, $file) {
+        $curl = new \curl();
+        $curl->setHeader(['Authorization: Bearer ' . $key]);
+
+        // OpenAI requires multipart/form-data for file uploads
+        $params = [
+            'purpose' => 'vision', // Use 'vision' for gpt-4o file analysis
+            'file' => $file // Moodle's curl class handles file objects/paths automatically
+        ];
+
+        $response = $curl->post("$baseurl/files", $params);
+        $data = json_decode($response, true);
+
+        if (is_array($data) && isset($data['id'])) {
+            return $data['id'];
+        }
+        return false;
+    }
+
+    /**
      * Retrieves the preferred OpenAI model for text generation.
      *
-     * This method queries OpenAI's API to fetch the list of available models and applies 
-     * filtering criteria to select a suitable model. It removes models with specific 
-     * naming patterns (e.g., preview versions, numeric suffixes) and prioritizes 
+     * This method queries OpenAI's API to fetch the list of available models and applies
+     * filtering criteria to select a suitable model. It removes models with specific
+     * naming patterns (e.g., preview versions, numeric suffixes) and prioritizes
      * valid GPT models for content generation.
      *
      * @param string $baseurl The base URL of the OpenAI API.
@@ -2933,7 +3711,7 @@ class data_field_report extends data_field_base {
         if ($curl->error) {
             return get_string('error').get_string('labelsep', 'langconfig').$response;
         }
-    
+
         if ($this->is_json($response)) {
             $response = json_decode($response, true);
         }
@@ -2977,9 +3755,9 @@ class data_field_report extends data_field_base {
     /**
      * Generates AI content using Google's Gemini API.
      *
-     * This method interacts with Google's Generative Language API to generate content 
-     * based on the provided prompt and optional files. It selects a valid Gemini model, 
-     * constructs the request payload, and sends it using cURL. The response is parsed 
+     * This method interacts with Google's Generative Language API to generate content
+     * based on the provided prompt and optional files. It selects a valid Gemini model,
+     * constructs the request payload, and sends it using cURL. The response is parsed
      * and returned as a text string.
      *
      * @param string $model The Gemini model to use (e.g., "models/gemini-1.5-pro").
@@ -2990,9 +3768,9 @@ class data_field_report extends data_field_base {
      *
      * @return string The generated response from the Gemini API or an error message.
      */
-    protected function generate_gemini($model, $key, $role, $prompt, $files) {
+    protected function generate_gemini($model, $key, $role, $prompt, $files=null) {
         global $DB;
-        $baseurl='https://generativelanguage.googleapis.com/v1beta';
+        $baseurl = 'https://generativelanguage.googleapis.com/v1beta';
 
         // Get default model.
         if (empty($model)) {
@@ -3016,40 +3794,64 @@ class data_field_report extends data_field_base {
             if ($match[4]) {
                 $model .= $match[4];
             } else {
-                $model .= '-pro';
+                $model .= '-flash';
             }
         } else {
-            $model = 'models/gemini-1.5-pro';
-            //$model = 'models/gemini-1.5-flash';
+            $model = 'models/gemini-1.5-flash';
+            //$model = 'models/gemini-1.5-pro';
             //$model = 'models/gemini-2.0-flash';
             //$model = 'models/gemini-2.0-flash-list';
         }
 
-        // https://ai.google.dev/api/generate-content
-        // Create a "Blob"
         $parts = [];
         $parts[] = ['text' => $prompt];
+
         if ($files) {
             if (is_scalar($files) || is_object($files)) {
                 $files = [$files];
             }
             foreach ($files as $file) {
-                $parts[] = ['inline_data' => [
-                    'mime_type' => $file->get_mimetype(),
-                    'data' => base64_encode($file->get_content()),
-                ]];
+                $filesize = $file->get_filesize();
+                if ($filesize <= self::GEMINI_MAX_REQUEST_SIZE) {
+                    // Small file, so pass as inline data (encoded as Base64).
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => $file->get_mimetype(),
+                            'data' => base64_encode($file->get_content()),
+                        ]
+                    ];
+                } else {
+                    // Large file so use files API to get a fileid.
+                    $fileuri = $this->upload_gemini_file($baseurl, $key, $file);
+                    if (empty($fileuri)) {
+                        return "Oops, could not upload file to Gemini.";
+                    }
+                    $parts[] = [
+                        'file_data' => [
+                            'mime_type' => $file->get_mimetype(),
+                            'file_uri' => $fileuri
+                        ]
+                    ];
+                }
             }
         }
 
-        // Use selected model to generate content.
-        $url = "$baseurl/$model:generateContent";
-        $postparams = ['contents' => [['parts' => $parts]]];
+        // Final payload for content generation
+        $url = "$baseurl/$model:generateContent?key=$key";
+        $headers = ['Content-Type: application/json'];
+        $postparams = [
+            'contents' => [['parts' => $parts]],
+            'system_instruction' => ['parts' => [['text' => $role]]]
+        ];
+
         $curl = new \curl();
-        $curl->setHeader(['Content-Type: application/json']);
-        $response = $curl->post("$url?key=$key", json_encode($postparams));
+        $curl->setHeader($headers);
+        $response = $curl->post($url, json_encode($postparams));
+
         if ($curl->error) {
-            return get_string('error').get_string('labelsep', 'langconfig').$response;
+            return get_string('error').": ".$response;
         }
+
         if ($this->is_json($response)) {
             $response = json_decode($response, true);
         }
@@ -3062,6 +3864,75 @@ class data_field_report extends data_field_base {
         $error = join(', ', array_keys($response));
         $error = 'Unrecognized response structure ('.$error.')';
         return get_string('error').get_string('labelsep', 'langconfig').$error;
+    }
+
+    /**
+     * Helper function to upload large files to the Gemini Media endpoint.
+     */
+    protected function upload_gemini_file($baseurl, $key, $file) {
+
+        $mimetype = $file->get_mimetype();
+        $content = $file->get_content();
+
+        $curl = new \curl();
+        $curl->setHeader([
+            "X-Goog-Upload-Protocol: raw",
+            "X-Goog-Upload-Command: upload, finalize",
+            "Content-Type: $mimetype"
+        ]);
+
+        // Upload endpoint.
+        $uploadurl = str_replace('v1beta', 'upload/v1beta', $baseurl);
+        $response = $curl->post("$uploadurl/files?key=$key", $content);
+
+        if ($curl->error || empty($response)) {
+            return false;
+        }
+
+        $data = json_decode($response, true);
+
+        if (! isset($data['file']['name'], $data['file']['uri'])) {
+            return false;
+        }
+
+        $filename = $data['file']['name'];
+        $fileuri = $data['file']['uri'];
+
+        // --- Poll until file becomes ACTIVE ---
+        $statusurl = $fileuri . "?key=$key";
+
+        $maxwait = 30; // seconds
+        $interval = 2;// seconds
+        $elapsed = 0;
+
+        while ($elapsed < $maxwait) {
+
+            sleep($interval);
+            $elapsed += $interval;
+
+            $statusresponse = $curl->get($statusurl);
+            if ($curl->error || empty($statusresponse)) {
+                return false;
+            }
+
+            $statusdata = json_decode($statusresponse, true);
+            if (! isset($statusdata['state'])) {
+                return false;
+            }
+
+            $state = strtoupper($statusdata['state']);
+
+            if ($state === 'ACTIVE') {
+                return $fileuri;
+            }
+
+            if ($state === 'FAILED') {
+                return false;
+            }
+        }
+
+        // Timed out.
+        return false;
     }
 
     /**
@@ -3087,19 +3958,19 @@ class data_field_report extends data_field_base {
         $curl = new \curl();
         $curl->setHeader(['Content-Type: application/json']);
         $response = $curl->get("$baseurl/models?key=$key");
-        
+
         if ($curl->error) {
             return get_string('error').get_string('labelsep', 'langconfig').$response;
         }
-    
+
         if ($this->is_json($response)) {
             $response = json_decode($response, true);
         }
-    
+
         if ($models = array_key_exists('models', $response)) {
             $models = $response['models'];
         }
-    
+
         if (is_array($models)) {
             // Reduce each model object to just a name.
             foreach ($models as $m => $model) {
@@ -3116,20 +3987,20 @@ class data_field_report extends data_field_base {
                 }
                 $models[$m] = $name;
             }
-    
+
             // Select the name of the first non-empty model.
             $models = array_filter($models);
             $model = reset($models);
         } else {
             $model = null;
         }
-    
+
         if (is_string($model)) {
             $model = trim($model);
         } else {
             $model = ''; // Shouldn't happen !!
         }
-    
+
         // Regex to match and format the Gemini model.
         // $1: "models/" (optional)
         // $2: "gemini-" (optional)
@@ -3149,7 +4020,7 @@ class data_field_report extends data_field_base {
             //$model = 'models/gemini-2.0-flash';
             //$model = 'models/gemini-2.0-flash-lite';
         }
-    
+
         return $model;
     }
 
@@ -3157,7 +4028,7 @@ class data_field_report extends data_field_base {
      * Sends an AI generation request to a specified AI provider and processes the response.
      *
      * This method is a generic handler for sending requests to an AI provider's API.
-     * It posts the request using cURL, decodes the JSON response, and extracts 
+     * It posts the request using cURL, decodes the JSON response, and extracts
      * the relevant data based on the specified return keys.
      *
      * @param string $model The AI model being used for generation.
@@ -3849,7 +4720,7 @@ class data_field_report extends data_field_base {
     }
 
     /**
-     * get list of teachers (including non-editing teachers) in this course
+     * get list of students (not including teachers) in this course
      */
     protected function valid_studentids() {
         if ($this->studentids === null) {

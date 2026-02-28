@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2026-03-01 (64)
+ - add new functions AUTOGRADE to allow grade to be calculated from wighted categories and set as 'rating'
+
 2025-04-05 (60)
  - add JS to expand/contract textarea height to match content
 
