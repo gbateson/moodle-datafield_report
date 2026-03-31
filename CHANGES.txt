@@ -2,6 +2,9 @@
 Change log for datafield_report
 ========================================
 
+2026-03-31 (66)
+ - bump version number because previous commit adding 'vendor' folder had no change in version
+
 2026-03-01 (64)
  - add new functions AUTOGRADE to allow grade to be calculated from wighted categories and set as 'rating'
 
